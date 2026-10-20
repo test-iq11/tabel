@@ -1,8 +1,10 @@
+Dart
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
-import '../models/app_models.dart';
 
 class DatabaseService {
+  // باقي الكود كما هو...
+}
   static final DatabaseService _instance = DatabaseService._internal();
   factory DatabaseService() => _instance;
   DatabaseService._internal();
