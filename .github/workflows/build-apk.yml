@@ -1,4 +1,4 @@
-name: بناء APK لتطبيق جدولي المدرسي من ZIP
+name: بناء APK لتطبيق جدولي المدرسي
 
 on:
   push:
@@ -8,46 +8,49 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
-    name: استخراج جدولي المدرسي والتحليل والاختبار والبناء
+    name: استخراج المشروع والتحقق وبناء APK موقّع
     runs-on: ubuntu-latest
     steps:
       - name: جلب المستودع
         uses: actions/checkout@v4
 
-      - name: العثور على ملف ZIP واستخراجه تلقائياً
+      - name: العثور على ZIP الصحيح واستخراجه
         shell: bash
         run: |
           set -euo pipefail
           ZIP_PATH=""
-          for candidate in ./*.zip ./*.ZIP; do
-            [ -f "$candidate" ] || continue
-            if unzip -Z1 "$candidate" | grep -Eq '(^|/)pubspec\.yaml$'; then
+          for candidate in \
+            ./jadwali-school-install-fix.zip \
+            ./jadwali-school-fixed.zip \
+            ./jadwali-school.zip \
+            ./jadwali_school.zip; do
+            if [ -f "$candidate" ] && unzip -Z1 "$candidate" | grep -Eq '(^|/)pubspec\.yaml$'; then
               ZIP_PATH="$candidate"
               break
             fi
           done
           if [ -z "$ZIP_PATH" ]; then
-            echo "خطأ: لم أعثر على ملف ZIP يحتوي على pubspec.yaml في جذر المستودع."
-            echo "ارفع ملف المشروع المضغوط إلى جذر مستودع GitHub أولاً."
+            echo "لم أعثر على ZIP مشروع معروف يحتوي على pubspec.yaml. ارفع jadwali-school-install-fix.zip إلى جذر المستودع."
             exit 1
           fi
+          unzip -t "$ZIP_PATH"
           DEST="$RUNNER_TEMP/jadwali-school-project"
           mkdir -p "$DEST"
           unzip -q "$ZIP_PATH" -d "$DEST"
           PUBSPEC="$(find "$DEST" -type f -name pubspec.yaml -print -quit)"
           if [ -z "$PUBSPEC" ]; then
-            echo "خطأ: لم يتم العثور على pubspec.yaml بعد استخراج ZIP."
+            echo "لم يتم العثور على pubspec.yaml بعد استخراج الملف."
             exit 1
           fi
           PROJECT_DIR="$(dirname "$PUBSPEC")"
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-          echo "تم العثور على المشروع داخل: $PROJECT_DIR"
+          echo "استخدام المشروع من: $PROJECT_DIR"
 
-      - name: إعداد Java
+      - name: إعداد Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -60,40 +63,75 @@ jobs:
           channel: stable
           cache: true
 
-      - name: معلومات Flutter
-        run: flutter --version
+      - name: عرض الإصدارات
+        run: |
+          flutter --version
+          java -version
 
       - name: تثبيت الحزم
         working-directory: ${{ env.PROJECT_DIR }}
         run: flutter pub get
 
-      - name: التحليل الساكن
+      - name: تحليل Dart
         working-directory: ${{ env.PROJECT_DIR }}
         run: flutter analyze
 
-      - name: الاختبارات
+      - name: تشغيل الاختبارات
         working-directory: ${{ env.PROJECT_DIR }}
         run: flutter test --reporter expanded
 
-      - name: بناء APK Release
+      - name: بناء APK موحد وموقّع للاختبار
         working-directory: ${{ env.PROJECT_DIR }}
-        run: flutter build apk --release
+        run: flutter build apk --release --target-platform android-arm,android-arm64,android-x64
 
-      - name: التحقق من وجود APK
+      - name: التأكد من وجود APK وصحة التوقيع
         working-directory: ${{ env.PROJECT_DIR }}
         shell: bash
         run: |
           set -euo pipefail
           APK="build/app/outputs/flutter-apk/app-release.apk"
           test -s "$APK"
-          echo "تم إنشاء الملف: $APK"
+          file "$APK"
+          unzip -t "$APK"
+          unzip -Z1 "$APK" | grep -qx 'AndroidManifest.xml'
+          SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+          if [ -z "$SDK_ROOT" ]; then
+            echo "لم يتم تحديد مسار Android SDK"; exit 1
+          fi
+          APKSIGNER="$(find "$SDK_ROOT/build-tools" -type f -name apksigner -print | sort -V | tail -n 1)"
+          if [ -z "$APKSIGNER" ]; then
+            echo "لم يتم العثور على apksigner ضمن Android SDK"; exit 1
+          fi
+          "$APKSIGNER" verify --verbose --print-certs "$APK"
           sha256sum "$APK"
+          echo "APK_PATH=$PWD/$APK" >> "$GITHUB_ENV"
 
-      - name: رفع APK كملف قابل للتنزيل
+      - name: رفع APK قابل للتنزيل
         uses: actions/upload-artifact@v4
         with:
           name: jadwali-school-release-apk
           path: ${{ env.PROJECT_DIR }}/build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
           retention-days: 30
+
+      - name: نشر APK برابط مباشر ضمن GitHub Releases
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APK_PATH: ${{ env.APK_PATH }}
+          REPOSITORY: ${{ github.repository }}
+          COMMIT_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="latest-apk"
+          TITLE="جدولي المدرسي - أحدث نسخة APK"
+          NOTES="APK موقّع للاختبار. Commit: ${COMMIT_SHA}. إذا كان التطبيق مثبتاً بمفتاح مختلف فقد يلزم إزالة النسخة القديمة بعد أخذ نسخة احتياطية من البيانات."
+          if gh release view "$TAG" --repo "$REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$APK_PATH" --repo "$REPOSITORY" --clobber
+            gh release edit "$TAG" --repo "$REPOSITORY" --title "$TITLE" --notes "$NOTES" --prerelease
+          else
+            gh release create "$TAG" "$APK_PATH" --repo "$REPOSITORY" \
+              --title "$TITLE" --notes "$NOTES" --prerelease --target "$COMMIT_SHA"
+          fi
 
