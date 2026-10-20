@@ -1,1 +1,99 @@
+name: بناء APK لتطبيق جدولي المدرسي من ZIP
+
+on:
+  push:
+    branches: ["main", "master"]
+  pull_request:
+    branches: ["main", "master"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: استخراج جدولي المدرسي والتحليل والاختبار والبناء
+    runs-on: ubuntu-latest
+    steps:
+      - name: جلب المستودع
+        uses: actions/checkout@v4
+
+      - name: العثور على ملف ZIP واستخراجه تلقائياً
+        shell: bash
+        run: |
+          set -euo pipefail
+          ZIP_PATH=""
+          for candidate in ./*.zip ./*.ZIP; do
+            [ -f "$candidate" ] || continue
+            if unzip -Z1 "$candidate" | grep -Eq '(^|/)pubspec\.yaml$'; then
+              ZIP_PATH="$candidate"
+              break
+            fi
+          done
+          if [ -z "$ZIP_PATH" ]; then
+            echo "خطأ: لم أعثر على ملف ZIP يحتوي على pubspec.yaml في جذر المستودع."
+            echo "ارفع ملف المشروع المضغوط إلى جذر مستودع GitHub أولاً."
+            exit 1
+          fi
+          DEST="$RUNNER_TEMP/jadwali-school-project"
+          mkdir -p "$DEST"
+          unzip -q "$ZIP_PATH" -d "$DEST"
+          PUBSPEC="$(find "$DEST" -type f -name pubspec.yaml -print -quit)"
+          if [ -z "$PUBSPEC" ]; then
+            echo "خطأ: لم يتم العثور على pubspec.yaml بعد استخراج ZIP."
+            exit 1
+          fi
+          PROJECT_DIR="$(dirname "$PUBSPEC")"
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+          echo "تم العثور على المشروع داخل: $PROJECT_DIR"
+
+      - name: إعداد Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: إعداد Flutter المستقر
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.7'
+          channel: stable
+          cache: true
+
+      - name: معلومات Flutter
+        run: flutter --version
+
+      - name: تثبيت الحزم
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: flutter pub get
+
+      - name: التحليل الساكن
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: flutter analyze
+
+      - name: الاختبارات
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: flutter test --reporter expanded
+
+      - name: بناء APK Release
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: flutter build apk --release
+
+      - name: التحقق من وجود APK
+        working-directory: ${{ env.PROJECT_DIR }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="build/app/outputs/flutter-apk/app-release.apk"
+          test -s "$APK"
+          echo "تم إنشاء الملف: $APK"
+          sha256sum "$APK"
+
+      - name: رفع APK كملف قابل للتنزيل
+        uses: actions/upload-artifact@v4
+        with:
+          name: jadwali-school-release-apk
+          path: ${{ env.PROJECT_DIR }}/build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+          retention-days: 30
 
