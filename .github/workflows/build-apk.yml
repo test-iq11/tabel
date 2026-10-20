@@ -1,4 +1,4 @@
-name: بناء جدولي المدرسي من ZIP
+name: بناء جدولي المدرسي 1.5.0 من ZIP
 
 on:
   push:
@@ -135,4 +135,3 @@ jobs:
           path: ${{ env.APK_PATH }}
           if-no-files-found: error
           retention-days: 30
-
