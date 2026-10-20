@@ -27,6 +27,9 @@ jobs:
           flutter-version: '3.16.0'
           channel: 'stable'
 
+      - name: Recreate Android Platform Files
+        run: flutter create . --platforms=android --org com.iraqi.school --project-name iraqi_school_timetable
+
       - name: Install Dependencies
         run: flutter pub get
 
