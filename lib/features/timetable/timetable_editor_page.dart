@@ -24,7 +24,7 @@ class _TimetableEditorPageState extends State<TimetableEditorPage> {
     var res = await db.query('sections');
     setState(() {
       _sections = res;
-      if (res.isNotEmpty) _selectedSectionId = res.first['id'];
+      if (res.isNotEmpty) _selectedSectionId = res.first['id'] as int?;
     });
   }
 
@@ -51,8 +51,8 @@ class _TimetableEditorPageState extends State<TimetableEditorPage> {
                   value: _selectedSectionId,
                   items: _sections.map((s) {
                     return DropdownMenuItem<int>(
-                      value: s['id'],
-                      child: Text('شعبة \${s['name']}'),
+                      value: s['id'] as int,
+                      child: Text('شعبة ${s['name']}'),
                     );
                   }).toList(),
                   onChanged: (val) {
