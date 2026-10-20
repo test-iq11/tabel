@@ -42,8 +42,8 @@ class _TeachersPageState extends State<TeachersPage> {
             margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             child: ListTile(
               leading: const CircleAvatar(child: Icon(Icons.person)),
-              title: Text(t['full_name'], style: const TextStyle(fontWeight: FontWeight.bold)),
-              subtitle: Text('الرمز: \${t['code']} | النصاب المستهدف: \${t['target_weekly_quota']} حصة'),
+              title: Text('${t['full_name']}', style: const TextStyle(fontWeight: FontWeight.bold)),
+              subtitle: Text('الرمز: ${t['code']} | النصاب المستهدف: ${t['target_weekly_quota']} حصة'),
               trailing: IconButton(icon: const Icon(Icons.edit, color: Colors.blue), onPressed: () {}),
             ),
           );
