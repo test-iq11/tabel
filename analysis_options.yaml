@@ -1,7 +1,0 @@
-analyzer:
-  exclude:
-    - build/**
-    - .dart_tool/**
-linter:
-  rules:
-    avoid_print: true
