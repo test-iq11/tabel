@@ -45,8 +45,8 @@ class _SubjectsPageState extends State<SubjectsPage> {
                 backgroundColor: Colors.blue.shade100,
                 child: const Icon(Icons.book, color: Colors.blue),
               ),
-              title: Text(sub['name'], style: const TextStyle(fontWeight: FontWeight.bold)),
-              subtitle: Text('رمز المادة: \${sub['code']} | الحصص الأسبوعية: \${sub['weekly_periods_count']}'),
+              title: Text('${sub['name']}', style: const TextStyle(fontWeight: FontWeight.bold)),
+              subtitle: Text('رمز المادة: ${sub['code']} | الحصص الأسبوعية: ${sub['weekly_periods_count']}'),
             ),
           );
         },
