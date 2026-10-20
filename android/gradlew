@@ -1,0 +1,16 @@
+#!/usr/bin/env sh
+# Wrapper مبسط للمشروع: ينزّل توزيع Gradle الرسمي إن لم يكن موجوداً ثم يشغله.
+set -eu
+GRADLE_VERSION="8.14.3"
+BASE="${GRADLE_USER_HOME:-$HOME/.gradle}/manual-dists"
+DEST="$BASE/gradle-$GRADLE_VERSION"
+if [ ! -x "$DEST/bin/gradle" ]; then
+  mkdir -p "$BASE"
+  ZIP="$BASE/gradle-$GRADLE_VERSION-bin.zip"
+  if [ ! -f "$ZIP" ]; then
+    echo "Downloading Gradle $GRADLE_VERSION..." >&2
+    curl --fail --location --retry 3 "https://services.gradle.org/distributions/gradle-$GRADLE_VERSION-bin.zip" --output "$ZIP"
+  fi
+  unzip -q -o "$ZIP" -d "$BASE"
+fi
+exec "$DEST/bin/gradle" "$@"
