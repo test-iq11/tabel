@@ -29,20 +29,20 @@ class PdfReportService {
                 mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                 children: [
                   pw.Text('جدول الحصص الأسبوعي الشامل للمدرسة', style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
-                  pw.Text('\${school['school_name']} - \${school['academic_year']}', style: pw.TextStyle(fontSize: 14)),
+                  pw.Text('${school['school_name']} - ${school['academic_year']}', style: pw.TextStyle(fontSize: 14)),
                 ],
               ),
             ),
             pw.SizedBox(height: 10),
             pw.Text('تقرير شامل لكافة الصفوف والشعب الدراسية مع توزيع المعلمين والمواد', style: const pw.TextStyle(fontSize: 12)),
             pw.SizedBox(height: 15),
-            pw.Table.fromTextArray(
+            pw.TableHelper.fromTextArray(
               border: pw.TableBorder.all(width: 0.5, color: PdfColors.grey700),
-              headers: ['الشعبة', 'اليوم', ...slots.map((s) => s['name'].toString())],
+              headers: ['الشعبة', 'اليوم', ...slots.map((s) => '${s['name']}')],
               data: sections.take(5).expand((sec) {
                 return days.map((day) {
                   return [
-                    'شعبة \${sec['name']}',
+                    'شعبة ${sec['name']}',
                     day,
                     ...slots.map((s) => 'مادة / معلم'),
                   ];
@@ -51,15 +51,14 @@ class PdfReportService {
             ),
             pw.SizedBox(height: 20),
             pw.Footer(
-              title: pw.Text('اعتماد الإدارة المدرسية: _________________ | تاريخ التصدير: \${DateTime.now().toString().split(' ').first}'),
+              title: pw.Text('اعتماد الإدارة المدرسية: _________________ | تاريخ التصدير: ${DateTime.now().toString().split(' ').first}'),
             )
           ];
         },
       ),
     );
 
-    final output = await getTemporaryDirectory();
-    final file = File("\${output.path}/school_timetable_comprehensive.pdf");
+    final file = File("${(await getTemporaryDirectory()).path}/school_timetable_comprehensive.pdf");
     await file.writeAsBytes(await pdf.save());
     return file.path;
   }
