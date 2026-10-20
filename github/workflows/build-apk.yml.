@@ -1,1 +1,65 @@
 
+name: بناء تطبيق أندرويد
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: تحليل واختبار وبناء APK Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: جلب المستودع
+        uses: actions/checkout@v4
+
+      - name: إعداد Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: إعداد Flutter المستقر
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.7'
+          channel: stable
+          cache: true
+
+      - name: معلومات البيئة
+        run: flutter --version
+
+      - name: تثبيت الحزم
+        run: flutter pub get
+
+      - name: التحليل الساكن
+        run: flutter analyze
+
+      - name: الاختبارات
+        run: flutter test --reporter expanded
+
+      - name: بناء APK Release
+        run: flutter build apk --release
+
+      - name: التحقق من وجود ملف APK
+        shell: bash
+        run: |
+          APK="build/app/outputs/flutter-apk/app-release.apk"
+          test -s "$APK"
+          echo "تم إنشاء الملف: $APK"
+          sha256sum "$APK"
+
+      - name: رفع APK كملف Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: iraqi-school-timetable-release-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+          retention-days: 30
+
