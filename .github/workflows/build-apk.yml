@@ -24,6 +24,7 @@ jobs:
           set -euo pipefail
           ZIP_PATH=""
           for candidate in \
+            ./jadwali-school-updated.zip \
             ./jadwali-school-install-fix.zip \
             ./jadwali-school-fixed.zip \
             ./jadwali-school.zip \
@@ -34,7 +35,7 @@ jobs:
             fi
           done
           if [ -z "$ZIP_PATH" ]; then
-            echo "لم أعثر على ZIP مشروع معروف يحتوي على pubspec.yaml. ارفع jadwali-school-install-fix.zip إلى جذر المستودع."
+            echo "لم أعثر على ZIP مشروع معروف يحتوي على pubspec.yaml. ارفع jadwali-school-updated.zip إلى جذر المستودع."
             exit 1
           fi
           unzip -t "$ZIP_PATH"
@@ -67,6 +68,31 @@ jobs:
         run: |
           flutter --version
           java -version
+
+      - name: إعداد مفتاح توقيع ثابت (اختياري)
+        working-directory: ${{ env.PROJECT_DIR }}
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${ANDROID_KEYSTORE_BASE64:-}" ]; then
+            echo "لم تُضف مفاتيح توقيع ثابتة؛ سيُستخدم توقيع Debug التجريبي."
+            exit 0
+          fi
+          if [ -z "${ANDROID_KEY_ALIAS:-}" ] || [ -z "${ANDROID_KEY_PASSWORD:-}" ] || [ -z "${ANDROID_STORE_PASSWORD:-}" ]; then
+            echo "الأسرار ANDROID_KEY_ALIAS وANDROID_KEY_PASSWORD وANDROID_STORE_PASSWORD مطلوبة مع ANDROID_KEYSTORE_BASE64"; exit 1
+          fi
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/upload-keystore.jks
+          cat > android/key.properties <<EOF
+          storePassword=$ANDROID_STORE_PASSWORD
+          keyPassword=$ANDROID_KEY_PASSWORD
+          keyAlias=$ANDROID_KEY_ALIAS
+          storeFile=upload-keystore.jks
+          EOF
 
       - name: تثبيت الحزم
         working-directory: ${{ env.PROJECT_DIR }}
@@ -109,7 +135,7 @@ jobs:
       - name: رفع APK قابل للتنزيل
         uses: actions/upload-artifact@v4
         with:
-          name: jadwali-school-release-apk
+          name: jadwali-school-updated-release-apk
           path: ${{ env.PROJECT_DIR }}/build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
           retention-days: 30
@@ -124,8 +150,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          TAG="latest-apk"
-          TITLE="جدولي المدرسي - أحدث نسخة APK"
+          TAG="jadwali-school-updated-apk"
+          TITLE="جدولي المدرسي - النسخة المحسّنة"
           NOTES="APK موقّع للاختبار. Commit: ${COMMIT_SHA}. إذا كان التطبيق مثبتاً بمفتاح مختلف فقد يلزم إزالة النسخة القديمة بعد أخذ نسخة احتياطية من البيانات."
           if gh release view "$TAG" --repo "$REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$TAG" "$APK_PATH" --repo "$REPOSITORY" --clobber
