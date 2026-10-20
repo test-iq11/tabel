@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:sqflite/sqflite.dart';
 import '../../services/database_service.dart';
 import '../timetable/timetable_editor_page.dart';
 import '../reports/reports_page.dart';
@@ -93,14 +94,14 @@ class _DashboardPageState extends State<DashboardPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(_stats['school_name'] ?? '', style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                  Text('${_stats['school_name']}', style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 4),
-                  Text('\${_stats['directorate']} | العام الدراسي: \${_stats['academic_year']}', style: const TextStyle(color: Colors.white70, fontSize: 14)),
+                  Text('${_stats['directorate']} | العام الدراسي: ${_stats['academic_year']}', style: const TextStyle(color: Colors.white70, fontSize: 14)),
                   const SizedBox(height: 8),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                     decoration: BoxDecoration(color: Colors.green, borderRadius: BorderRadius.circular(12)),
-                    child: Text('حالة الجدول: \${_stats['status']}', style: const TextStyle(color: Colors.white, fontSize: 12)),
+                    child: Text('حالة الجدول: ${_stats['status']}', style: const TextStyle(color: Colors.white, fontSize: 12)),
                   )
                 ],
               ),
@@ -120,10 +121,10 @@ class _DashboardPageState extends State<DashboardPage> {
       mainAxisSpacing: 12,
       childAspectRatio: 2.2,
       children: [
-        _buildStatTile('عدد الصفوف', '\${_stats['grades']}', Icons.class_, Colors.blue),
-        _buildStatTile('عدد الشعب', '\${_stats['sections']}', Icons.groups, Colors.indigo),
-        _buildStatTile('عدد المواد', '\${_stats['subjects']}', Icons.book, Colors.teal),
-        _buildStatTile('عدد المعلمين', '\${_stats['teachers']}', Icons.person, Colors.orange),
+        _buildStatTile('عدد الصفوف', '${_stats['grades']}', Icons.class_, Colors.blue),
+        _buildStatTile('عدد الشعب', '${_stats['sections']}', Icons.groups, Colors.indigo),
+        _buildStatTile('عدد المواد', '${_stats['subjects']}', Icons.book, Colors.teal),
+        _buildStatTile('عدد المعلمين', '${_stats['teachers']}', Icons.person, Colors.orange),
       ],
     );
   }
