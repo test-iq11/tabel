@@ -1,4 +1,4 @@
-name: بناء جدولي المدرسي 1.5.0 من ZIP
+name: بناء APK لتطبيق جدولي المدرسي من ZIP
 
 on:
   push:
@@ -12,126 +12,102 @@ permissions:
 
 jobs:
   build:
-    name: تحليل واختبار وبناء APK
+    name: فحص المشروع وبناء APK
     runs-on: ubuntu-latest
     steps:
       - name: جلب المستودع
         uses: actions/checkout@v4
 
-      - name: التحقق من ملف المشروع المضغوط
+      - name: تحديد المشروع أو استخراج ZIP
         shell: bash
         run: |
           set -euo pipefail
-          ZIP_FILE="jadwali-school-final.zip"
-          if [ ! -s "$ZIP_FILE" ]; then
-            echo "::error::ضع ملف jadwali-school-final.zip في جذر مستودع GitHub كما هو، دون فك ضغطه محلياً."
-            exit 1
+          if [ -f "$GITHUB_WORKSPACE/pubspec.yaml" ]; then
+            PROJECT_DIR="$GITHUB_WORKSPACE"
+          else
+            ZIP_PATH=""
+            for candidate in \
+              "$GITHUB_WORKSPACE/jadwali-school-complete.zip" \
+              "$GITHUB_WORKSPACE/jadwali-school-repaired.zip" \
+              "$GITHUB_WORKSPACE/jadwali-school-final.zip"; do
+              if [ -f "$candidate" ] && unzip -Z1 "$candidate" | grep -Eq '(^|/)pubspec\.yaml$'; then
+                ZIP_PATH="$candidate"
+                break
+              fi
+            done
+            if [ -z "$ZIP_PATH" ]; then
+              for candidate in "$GITHUB_WORKSPACE"/*.zip "$GITHUB_WORKSPACE"/*.ZIP; do
+                [ -f "$candidate" ] || continue
+                if unzip -Z1 "$candidate" | grep -Eq '(^|/)pubspec\.yaml$'; then
+                  ZIP_PATH="$candidate"
+                  break
+                fi
+              done
+            fi
+            if [ -z "$ZIP_PATH" ]; then
+              echo "لم يُعثر على pubspec.yaml أو ZIP مشروع Flutter في جذر المستودع."
+              exit 1
+            fi
+            unzip -t "$ZIP_PATH"
+            DEST="$RUNNER_TEMP/jadwali-school-project"
+            mkdir -p "$DEST"
+            unzip -q "$ZIP_PATH" -d "$DEST"
+            PUBSPEC="$(find "$DEST" -type f -name pubspec.yaml -print -quit)"
+            if [ -z "$PUBSPEC" ]; then
+              echo "لم يتم العثور على pubspec.yaml بعد استخراج ZIP."
+              exit 1
+            fi
+            PROJECT_DIR="$(dirname "$PUBSPEC")"
           fi
-          unzip -t "$ZIP_FILE"
-
-      - name: استخراج المشروع داخل بيئة البناء
-        id: extract
-        shell: bash
-        run: |
-          set -euo pipefail
-          EXTRACT_DIR="$RUNNER_TEMP/jadwali-school-source"
-          mkdir -p "$EXTRACT_DIR"
-          unzip -q "jadwali-school-final.zip" -d "$EXTRACT_DIR"
-          PUBSPEC="$(find "$EXTRACT_DIR" -type f -name pubspec.yaml -not -path '*/.dart_tool/*' -print -quit)"
-          if [ -z "$PUBSPEC" ]; then
-            echo "::error::لم أجد pubspec.yaml داخل ملف ZIP. تأكد من رفع حزمة المشروع كاملة."
-            exit 1
-          fi
-          PROJECT_DIR="$(dirname "$PUBSPEC")"
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-          echo "تم العثور على مشروع Flutter في: $PROJECT_DIR"
+          echo "المشروع المستخدم: $PROJECT_DIR"
 
-      - name: إعداد Java
+      - name: إعداد Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: '17'
 
       - name: إعداد Flutter المستقر
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: "3.47.7"
+          flutter-version: '3.47.7'
           channel: stable
           cache: true
 
-      - name: معلومات الأدوات
-        shell: bash
-        run: |
-          flutter --version
-          java -version
-
-      - name: إعداد توقيع Release ثابت (اختياري)
-        env:
-          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-          ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [ -z "${ANDROID_KEYSTORE_BASE64:-}" ]; then
-            echo "لا يوجد مفتاح Release ثابت؛ سيُستخدم مفتاح Debug للاختبار فقط. قد لا يمكن تثبيت تحديث فوق APK موقّع بمفتاح مختلف."
-            exit 0
-          fi
-          if [ -z "${ANDROID_KEY_ALIAS:-}" ] || [ -z "${ANDROID_KEY_PASSWORD:-}" ] || [ -z "${ANDROID_STORE_PASSWORD:-}" ]; then
-            echo "::error::يلزم ضبط ANDROID_KEY_ALIAS وANDROID_KEY_PASSWORD وANDROID_STORE_PASSWORD مع ANDROID_KEYSTORE_BASE64."
-            exit 1
-          fi
-          mkdir -p "$PROJECT_DIR/android"
-          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$PROJECT_DIR/android/upload-keystore.jks"
-          cat > "$PROJECT_DIR/android/key.properties" <<EOF
-          storePassword=$ANDROID_STORE_PASSWORD
-          keyPassword=$ANDROID_KEY_PASSWORD
-          keyAlias=$ANDROID_KEY_ALIAS
-          storeFile=upload-keystore.jks
-          EOF
+      - name: عرض الإصدارات
+        run: flutter --version
 
       - name: تثبيت الحزم
-        shell: bash
-        run: |
-          cd "$PROJECT_DIR"
-          flutter pub get
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: flutter pub get
 
-      - name: تحليل المشروع
-        shell: bash
-        run: |
-          cd "$PROJECT_DIR"
-          flutter analyze
+      - name: تحليل Dart
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: flutter analyze
 
       - name: تشغيل الاختبارات
-        shell: bash
-        run: |
-          cd "$PROJECT_DIR"
-          flutter test --reporter expanded
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: flutter test --reporter expanded
 
       - name: بناء APK Release
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: flutter build apk --release
+
+      - name: التأكد من ملف APK
         shell: bash
+        working-directory: ${{ env.PROJECT_DIR }}
         run: |
           set -euo pipefail
-          cd "$PROJECT_DIR"
-          chmod +x android/gradlew
-          flutter build apk --release
-          APK="$PROJECT_DIR/build/app/outputs/flutter-apk/app-release.apk"
+          APK="build/app/outputs/flutter-apk/app-release.apk"
           test -s "$APK"
-          SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
-          if [ -n "$SDK_ROOT" ] && [ -d "$SDK_ROOT/build-tools" ]; then
-            APKSIGNER="$(find "$SDK_ROOT/build-tools" -type f -name apksigner -print | sort -V | tail -n 1)"
-            if [ -n "$APKSIGNER" ]; then "$APKSIGNER" verify --verbose "$APK"; fi
-          fi
-          mkdir -p "$RUNNER_TEMP/jadwali-school-output"
-          cp "$APK" "$RUNNER_TEMP/jadwali-school-output/app-release.apk"
-          sha256sum "$RUNNER_TEMP/jadwali-school-output/app-release.apk"
-          echo "APK_PATH=$RUNNER_TEMP/jadwali-school-output/app-release.apk" >> "$GITHUB_ENV"
+          file "$APK"
+          sha256sum "$APK"
 
-      - name: رفع ملف APK الناتج
+      - name: رفع APK كملف قابل للتنزيل
         uses: actions/upload-artifact@v4
         with:
-          name: jadwali-school-release-apk
-          path: ${{ env.APK_PATH }}
+          name: jadwali-school-complete-release-apk
+          path: ${{ env.PROJECT_DIR }}/build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
           retention-days: 30
