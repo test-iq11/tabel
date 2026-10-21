@@ -1,10 +1,10 @@
-name: بناء تطبيق أندرويد
+name: بناء تطبيق جدولي المدرسي
 
 on:
   push:
-    branches: [ "main", "master" ]
+    branches: [main, master]
   pull_request:
-    branches: [ "main", "master" ]
+    branches: [main, master]
   workflow_dispatch:
 
 permissions:
@@ -12,29 +12,76 @@ permissions:
 
 jobs:
   build:
-    name: تحليل واختبار وبناء APK Release
+    name: تدقيق واختبار وبناء APK
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - name: جلب المستودع
         uses: actions/checkout@v4
 
-      - name: تحديد مجلد مشروع Flutter
+      - name: تحديد مشروع Flutter أو استخراج حزمة ZIP
         shell: bash
         run: |
           set -euo pipefail
-          if [ -f "pubspec.yaml" ]; then
-            echo "PROJECT_DIR=." >> "$GITHUB_ENV"
-            echo "تم العثور على pubspec.yaml في جذر المستودع."
-          elif [ -f "jadwali_school/pubspec.yaml" ]; then
-            echo "PROJECT_DIR=jadwali_school" >> "$GITHUB_ENV"
-            echo "تم العثور على المشروع داخل jadwali_school/."
-          else
-            echo "لم يتم العثور على pubspec.yaml. تأكد من رفع ملفات مشروع Flutter وليس ملف ZIP فقط."
-            find . -maxdepth 3 -name pubspec.yaml -print
+          ROOT="$GITHUB_WORKSPACE"
+          PUBSPEC=""
+
+          # The explicitly named final audit package has priority even if an older
+          # source checkout also exists in the repository. This avoids building stale code.
+          PREFERRED="$ROOT/jadwali-school-audited.zip"
+          if [ -f "$PREFERRED" ]; then
+            mkdir -p "$ROOT/.build_source/final"
+            unzip -oq "$PREFERRED" -d "$ROOT/.build_source/final"
+            PUBSPEC="$(find "$ROOT/.build_source/final" -type f -name pubspec.yaml -not -path '*/.git/*' -print -quit || true)"
+          fi
+
+          # If no final package is uploaded, first accept the complete root project.
+          if [ -z "$PUBSPEC" ] && [ -f "$ROOT/pubspec.yaml" ]; then
+            PUBSPEC="$ROOT/pubspec.yaml"
+          fi
+
+          # A nested source checkout is supported too, but never search extracted build output.
+          if [ -z "$PUBSPEC" ]; then
+            PUBSPEC="$(find "$ROOT" -maxdepth 7 -type f -name pubspec.yaml \
+              -not -path '*/.git/*' -not -path '*/.build_source/*' \
+              -not -path '*/.dart_tool/*' -print -quit 2>/dev/null || true)"
+          fi
+
+          # If the repository contains only one ZIP, use it. If there are several,
+          # require the explicit final filename to avoid silently building an older archive.
+          if [ -z "$PUBSPEC" ]; then
+            mapfile -t ZIPS < <(find "$ROOT" -maxdepth 1 -type f -iname '*.zip' -printf '%f\n' | sort)
+            if [ "${#ZIPS[@]}" -eq 1 ]; then
+              mkdir -p "$ROOT/.build_source/single-archive"
+              unzip -oq "$ROOT/${ZIPS[0]}" -d "$ROOT/.build_source/single-archive"
+              PUBSPEC="$(find "$ROOT/.build_source/single-archive" -type f -name pubspec.yaml -not -path '*/.git/*' -print -quit || true)"
+            elif [ "${#ZIPS[@]}" -gt 1 ]; then
+              echo "عُثر على عدة ملفات ZIP ولا يوجد مشروع Flutter في المستودع. ارفع الحزمة النهائية باسم jadwali-school-audited.zip واحذف/انقل النسخ القديمة، لتجنب بناء نسخة خاطئة."
+              printf 'ملفات ZIP الموجودة: %s\n' "${ZIPS[*]}"
+              exit 1
+            fi
+          fi
+
+          if [ -z "$PUBSPEC" ] || [ ! -f "$PUBSPEC" ]; then
+            echo "لم أجد pubspec.yaml. يجب وضع ملفات المشروع كاملة في الجذر، أو رفع jadwali-school-audited.zip إلى جذر المستودع."
+            find "$ROOT" -maxdepth 7 -type f \( -name pubspec.yaml -o -name '*.zip' \) -not -path '*/.git/*' -print || true
             exit 1
           fi
 
-      - name: إعداد Java
+          PROJECT_PATH="$(dirname "$PUBSPEC")"
+          if [ ! -f "$PROJECT_PATH/lib/main.dart" ] || [ ! -d "$PROJECT_PATH/android" ]; then
+            echo "وُجد pubspec.yaml لكن المشروع غير مكتمل: يلزم lib/main.dart ومجلد android/ بجانبه."
+            echo "المجلد: $PROJECT_PATH"
+            ls -la "$PROJECT_PATH" || true
+            exit 1
+          fi
+          PROJECT_DIR="$(realpath --relative-to="$ROOT" "$PROJECT_PATH")"
+          [ -n "$PROJECT_DIR" ] || PROJECT_DIR="."
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+          echo "مجلد المشروع المعتمد: $PROJECT_DIR"
+          ls -la "$PROJECT_PATH" | head -40
+
+      - name: إعداد Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -45,12 +92,11 @@ jobs:
         with:
           flutter-version: '3.47.7'
           channel: stable
-          cache: true
 
-      - name: معلومات البيئة
+      - name: فحص نسخة Flutter
         run: flutter --version
 
-      - name: إعداد مفتاح توقيع ثابت (اختياري)
+      - name: إعداد توقيع ثابت (اختياري)
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
@@ -61,39 +107,53 @@ jobs:
           set -euo pipefail
           cd "$PROJECT_DIR"
           if [ -z "${ANDROID_KEYSTORE_BASE64:-}" ]; then
-            echo "لم تُضف مفاتيح توقيع ثابتة؛ سيُستخدم توقيع Debug التجريبي."
+            echo "لم تُحدد أسرار توقيع ثابت؛ سيُستخدم توقيع Debug للبناء التجريبي."
             exit 0
           fi
           if [ -z "${ANDROID_KEY_ALIAS:-}" ] || [ -z "${ANDROID_KEY_PASSWORD:-}" ] || [ -z "${ANDROID_STORE_PASSWORD:-}" ]; then
-            echo "الأسرار ANDROID_KEY_ALIAS وANDROID_KEY_PASSWORD وANDROID_STORE_PASSWORD مطلوبة مع ANDROID_KEYSTORE_BASE64"; exit 1
+            echo "عند تقديم ANDROID_KEYSTORE_BASE64 يجب أيضًا ضبط ANDROID_KEY_ALIAS وANDROID_KEY_PASSWORD وANDROID_STORE_PASSWORD."
+            exit 1
           fi
           printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/upload-keystore.jks
-          cat > android/key.properties <<EOF storePassword=$ANDROID_STORE_PASSWORD keyPassword=$ANDROID_KEY_PASSWORD keyAlias=$ANDROID_KEY_ALIAS storeFile=upload-keystore.jks EOF
+          cat > android/key.properties <<EOF
+          storePassword=$ANDROID_STORE_PASSWORD
+          keyPassword=$ANDROID_KEY_PASSWORD
+          keyAlias=$ANDROID_KEY_ALIAS
+          storeFile=upload-keystore.jks
+          EOF
 
-      - name: تثبيت الحزم
+      - name: تنزيل اعتماديات Flutter
+        shell: bash
         run: cd "$PROJECT_DIR" && flutter pub get
 
-      - name: التحليل الساكن
+      - name: تحليل Dart
+        shell: bash
         run: cd "$PROJECT_DIR" && flutter analyze --no-fatal-infos
 
-      - name: الاختبارات
+      - name: تشغيل الاختبارات
+        shell: bash
         run: cd "$PROJECT_DIR" && flutter test --reporter expanded
 
       - name: بناء APK Release
+        shell: bash
         run: cd "$PROJECT_DIR" && flutter build apk --release
 
-      - name: التحقق من وجود ملف APK
+      - name: التحقق من ملف APK
         shell: bash
         run: |
+          set -euo pipefail
           APK="$PROJECT_DIR/build/app/outputs/flutter-apk/app-release.apk"
           test -s "$APK"
-          echo "تم إنشاء الملف: $APK"
+          ls -lh "$APK"
           sha256sum "$APK"
+          mkdir -p "$GITHUB_WORKSPACE/apk-artifact"
+          cp "$APK" "$GITHUB_WORKSPACE/apk-artifact/app-release.apk"
 
-      - name: رفع APK كملف Artifact
+      - name: رفع APK الناتج
         uses: actions/upload-artifact@v4
         with:
           name: jadwali-school-release-apk
-          path: ${{ env.PROJECT_DIR }}/build/app/outputs/flutter-apk/app-release.apk
+          path: apk-artifact/app-release.apk
           if-no-files-found: error
           retention-days: 30
+
