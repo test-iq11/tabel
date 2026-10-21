@@ -28,7 +28,7 @@ jobs:
 
           # The explicitly named final audit package has priority even if an older
           # source checkout also exists in the repository. This avoids building stale code.
-          PREFERRED="$ROOT/jadwali-school-project-v1.8.2.zip"
+          PREFERRED="$ROOT/jadwali-school-project-v1.8.3.zip"
           if [ -f "$PREFERRED" ]; then
             mkdir -p "$ROOT/.build_source/final"
             unzip -oq "$PREFERRED" -d "$ROOT/.build_source/final"
@@ -56,14 +56,14 @@ jobs:
               unzip -oq "$ROOT/${ZIPS[0]}" -d "$ROOT/.build_source/single-archive"
               PUBSPEC="$(find "$ROOT/.build_source/single-archive" -type f -name pubspec.yaml -not -path '*/.git/*' -print -quit || true)"
             elif [ "${#ZIPS[@]}" -gt 1 ]; then
-              echo "عُثر على عدة ملفات ZIP ولا يوجد مشروع Flutter في المستودع. ارفع الحزمة النهائية باسم jadwali-school-project-v1.8.2.zip واحذف/انقل النسخ القديمة، لتجنب بناء نسخة خاطئة."
+              echo "عُثر على عدة ملفات ZIP ولا يوجد مشروع Flutter في المستودع. ارفع الحزمة النهائية باسم jadwali-school-project-v1.8.3.zip واحذف/انقل النسخ القديمة، لتجنب بناء نسخة خاطئة."
               printf 'ملفات ZIP الموجودة: %s\n' "${ZIPS[*]}"
               exit 1
             fi
           fi
 
           if [ -z "$PUBSPEC" ] || [ ! -f "$PUBSPEC" ]; then
-            echo "لم أجد pubspec.yaml. يجب وضع ملفات المشروع كاملة في الجذر، أو رفع jadwali-school-project-v1.8.2.zip إلى جذر المستودع."
+            echo "لم أجد pubspec.yaml. يجب وضع ملفات المشروع كاملة في الجذر، أو رفع jadwali-school-project-v1.8.3.zip إلى جذر المستودع."
             find "$ROOT" -maxdepth 7 -type f \( -name pubspec.yaml -o -name '*.zip' \) -not -path '*/.git/*' -print || true
             exit 1
           fi
@@ -152,8 +152,7 @@ jobs:
       - name: رفع APK الناتج
         uses: actions/upload-artifact@v4
         with:
-          name: jadwali-school-1.8.2-release-apk
+          name: jadwali-school-1.8.3-release-apk
           path: apk-artifact/app-release.apk
           if-no-files-found: error
           retention-days: 30
-
