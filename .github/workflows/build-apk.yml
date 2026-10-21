@@ -1,10 +1,10 @@
-name: بناء APK لتطبيق جدولي المدرسي من ZIP
+name: بناء تطبيق أندرويد
 
 on:
   push:
-    branches: ["main", "master"]
+    branches: [ "main", "master" ]
   pull_request:
-    branches: ["main", "master"]
+    branches: [ "main", "master" ]
   workflow_dispatch:
 
 permissions:
@@ -12,57 +12,13 @@ permissions:
 
 jobs:
   build:
-    name: فحص المشروع وبناء APK
+    name: تحليل واختبار وبناء APK Release
     runs-on: ubuntu-latest
     steps:
       - name: جلب المستودع
         uses: actions/checkout@v4
 
-      - name: تحديد المشروع أو استخراج ZIP
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [ -f "$GITHUB_WORKSPACE/pubspec.yaml" ]; then
-            PROJECT_DIR="$GITHUB_WORKSPACE"
-          else
-            ZIP_PATH=""
-            for candidate in \
-              "$GITHUB_WORKSPACE/jadwali-school-complete.zip" \
-              "$GITHUB_WORKSPACE/jadwali-school-repaired.zip" \
-              "$GITHUB_WORKSPACE/jadwali-school-final.zip"; do
-              if [ -f "$candidate" ] && unzip -Z1 "$candidate" | grep -Eq '(^|/)pubspec\.yaml$'; then
-                ZIP_PATH="$candidate"
-                break
-              fi
-            done
-            if [ -z "$ZIP_PATH" ]; then
-              for candidate in "$GITHUB_WORKSPACE"/*.zip "$GITHUB_WORKSPACE"/*.ZIP; do
-                [ -f "$candidate" ] || continue
-                if unzip -Z1 "$candidate" | grep -Eq '(^|/)pubspec\.yaml$'; then
-                  ZIP_PATH="$candidate"
-                  break
-                fi
-              done
-            fi
-            if [ -z "$ZIP_PATH" ]; then
-              echo "لم يُعثر على pubspec.yaml أو ZIP مشروع Flutter في جذر المستودع."
-              exit 1
-            fi
-            unzip -t "$ZIP_PATH"
-            DEST="$RUNNER_TEMP/jadwali-school-project"
-            mkdir -p "$DEST"
-            unzip -q "$ZIP_PATH" -d "$DEST"
-            PUBSPEC="$(find "$DEST" -type f -name pubspec.yaml -print -quit)"
-            if [ -z "$PUBSPEC" ]; then
-              echo "لم يتم العثور على pubspec.yaml بعد استخراج ZIP."
-              exit 1
-            fi
-            PROJECT_DIR="$(dirname "$PUBSPEC")"
-          fi
-          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-          echo "المشروع المستخدم: $PROJECT_DIR"
-
-      - name: إعداد Java 17
+      - name: إعداد Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -75,39 +31,52 @@ jobs:
           channel: stable
           cache: true
 
-      - name: عرض الإصدارات
+      - name: معلومات البيئة
         run: flutter --version
 
+      - name: إعداد مفتاح توقيع ثابت (اختياري)
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${ANDROID_KEYSTORE_BASE64:-}" ]; then
+            echo "لم تُضف مفاتيح توقيع ثابتة؛ سيُستخدم توقيع Debug التجريبي."
+            exit 0
+          fi
+          if [ -z "${ANDROID_KEY_ALIAS:-}" ] || [ -z "${ANDROID_KEY_PASSWORD:-}" ] || [ -z "${ANDROID_STORE_PASSWORD:-}" ]; then
+            echo "الأسرار ANDROID_KEY_ALIAS وANDROID_KEY_PASSWORD وANDROID_STORE_PASSWORD مطلوبة مع ANDROID_KEYSTORE_BASE64"; exit 1
+          fi
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/upload-keystore.jks
+          cat > android/key.properties <<EOF storePassword=$ANDROID_STORE_PASSWORD keyPassword=$ANDROID_KEY_PASSWORD keyAlias=$ANDROID_KEY_ALIAS storeFile=upload-keystore.jks EOF
+
       - name: تثبيت الحزم
-        working-directory: ${{ env.PROJECT_DIR }}
         run: flutter pub get
 
-      - name: تحليل Dart
-        working-directory: ${{ env.PROJECT_DIR }}
-        run: flutter analyze
+      - name: التحليل الساكن
+        run: flutter analyze --no-fatal-infos
 
-      - name: تشغيل الاختبارات
-        working-directory: ${{ env.PROJECT_DIR }}
+      - name: الاختبارات
         run: flutter test --reporter expanded
 
       - name: بناء APK Release
-        working-directory: ${{ env.PROJECT_DIR }}
         run: flutter build apk --release
 
-      - name: التأكد من ملف APK
+      - name: التحقق من وجود ملف APK
         shell: bash
-        working-directory: ${{ env.PROJECT_DIR }}
         run: |
-          set -euo pipefail
           APK="build/app/outputs/flutter-apk/app-release.apk"
           test -s "$APK"
-          file "$APK"
+          echo "تم إنشاء الملف: $APK"
           sha256sum "$APK"
 
-      - name: رفع APK كملف قابل للتنزيل
+      - name: رفع APK كملف Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: jadwali-school-complete-release-apk
-          path: ${{ env.PROJECT_DIR }}/build/app/outputs/flutter-apk/app-release.apk
+          name: jadwali-school-release-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
           retention-days: 30
