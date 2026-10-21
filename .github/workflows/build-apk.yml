@@ -18,6 +18,22 @@ jobs:
       - name: جلب المستودع
         uses: actions/checkout@v4
 
+      - name: تحديد مجلد مشروع Flutter
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -f "pubspec.yaml" ]; then
+            echo "PROJECT_DIR=." >> "$GITHUB_ENV"
+            echo "تم العثور على pubspec.yaml في جذر المستودع."
+          elif [ -f "jadwali_school/pubspec.yaml" ]; then
+            echo "PROJECT_DIR=jadwali_school" >> "$GITHUB_ENV"
+            echo "تم العثور على المشروع داخل jadwali_school/."
+          else
+            echo "لم يتم العثور على pubspec.yaml. تأكد من رفع ملفات مشروع Flutter وليس ملف ZIP فقط."
+            find . -maxdepth 3 -name pubspec.yaml -print
+            exit 1
+          fi
+
       - name: إعداد Java
         uses: actions/setup-java@v4
         with:
@@ -43,6 +59,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          cd "$PROJECT_DIR"
           if [ -z "${ANDROID_KEYSTORE_BASE64:-}" ]; then
             echo "لم تُضف مفاتيح توقيع ثابتة؛ سيُستخدم توقيع Debug التجريبي."
             exit 0
@@ -54,21 +71,21 @@ jobs:
           cat > android/key.properties <<EOF storePassword=$ANDROID_STORE_PASSWORD keyPassword=$ANDROID_KEY_PASSWORD keyAlias=$ANDROID_KEY_ALIAS storeFile=upload-keystore.jks EOF
 
       - name: تثبيت الحزم
-        run: flutter pub get
+        run: cd "$PROJECT_DIR" && flutter pub get
 
       - name: التحليل الساكن
-        run: flutter analyze --no-fatal-infos
+        run: cd "$PROJECT_DIR" && flutter analyze --no-fatal-infos
 
       - name: الاختبارات
-        run: flutter test --reporter expanded
+        run: cd "$PROJECT_DIR" && flutter test --reporter expanded
 
       - name: بناء APK Release
-        run: flutter build apk --release
+        run: cd "$PROJECT_DIR" && flutter build apk --release
 
       - name: التحقق من وجود ملف APK
         shell: bash
         run: |
-          APK="build/app/outputs/flutter-apk/app-release.apk"
+          APK="$PROJECT_DIR/build/app/outputs/flutter-apk/app-release.apk"
           test -s "$APK"
           echo "تم إنشاء الملف: $APK"
           sha256sum "$APK"
@@ -77,6 +94,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: jadwali-school-release-apk
-          path: build/app/outputs/flutter-apk/app-release.apk
+          path: ${{ env.PROJECT_DIR }}/build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
           retention-days: 30
