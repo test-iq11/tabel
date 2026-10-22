@@ -14,7 +14,7 @@ jobs:
   build:
     name: تدقيق واختبار وبناء APK
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 90
     steps:
       - name: جلب المستودع
         uses: actions/checkout@v4
@@ -30,7 +30,7 @@ jobs:
           # source checkout also exists in the repository. This avoids building stale code.
           # Prefer the explicitly named release archive; otherwise select the
           # newest versioned Jadwali archive in the repository root.
-          PREFERRED="$ROOT/jadwali-school-project-v1.8.14.zip"
+          PREFERRED="$ROOT/jadwali-school-project-v1.9.0.zip"
           if [ ! -f "$PREFERRED" ]; then
             PREFERRED="$(find "$ROOT" -maxdepth 1 -type f -regextype posix-extended \
               -regex '.*/jadwali-school-project-v[0-9]+\.[0-9]+\.[0-9]+\.zip' \
