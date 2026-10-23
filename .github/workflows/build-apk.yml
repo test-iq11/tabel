@@ -164,3 +164,4 @@ jobs:
           path: apk-artifact/app-release.apk
           if-no-files-found: error
           retention-days: 30
+
