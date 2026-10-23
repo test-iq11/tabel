@@ -14,7 +14,7 @@ jobs:
   build:
     name: تدقيق واختبار وبناء APK
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 45
     steps:
       - name: جلب المستودع
         uses: actions/checkout@v4
@@ -26,16 +26,13 @@ jobs:
           ROOT="$GITHUB_WORKSPACE"
           PUBSPEC=""
 
-          # Build the newest versioned package, including when older ZIPs coexist.
-          PREFERRED="$(find "$ROOT" -maxdepth 1 -type f -regextype posix-extended \
-            -regex '.*/jadwali-school-project-v[0-9]+\.[0-9]+\.[0-9]+\.zip' \
-            -printf '%f\n' | sort -V | tail -n 1 || true)"
-          if [ -n "$PREFERRED" ]; then PREFERRED="$ROOT/$PREFERRED"; fi
-          if [ -n "$PREFERRED" ] && [ -f "$PREFERRED" ]; then
+          # The explicitly named final audit package has priority even if an older
+          # source checkout also exists in the repository. This avoids building stale code.
+          PREFERRED="$ROOT/jadwali-school-audited.zip"
+          if [ -f "$PREFERRED" ]; then
             mkdir -p "$ROOT/.build_source/final"
             unzip -oq "$PREFERRED" -d "$ROOT/.build_source/final"
             PUBSPEC="$(find "$ROOT/.build_source/final" -type f -name pubspec.yaml -not -path '*/.git/*' -print -quit || true)"
-            echo "حزمة المشروع المختارة: $(basename "$PREFERRED")"
           fi
 
           # If no final package is uploaded, first accept the complete root project.
@@ -50,28 +47,23 @@ jobs:
               -not -path '*/.dart_tool/*' -print -quit 2>/dev/null || true)"
           fi
 
-          # Last fallback: if no versioned Jadwali archive was found, inspect
-          # all root ZIP files newest-first and use the first complete Flutter project.
+          # If the repository contains only one ZIP, use it. If there are several,
+          # require the explicit final filename to avoid silently building an older archive.
           if [ -z "$PUBSPEC" ]; then
-            mapfile -t ZIPS < <(find "$ROOT" -maxdepth 1 -type f -iname '*.zip' -printf '%f\n' | sort -Vr)
-            for ZIP_NAME in "${ZIPS[@]}"; do
-              CANDIDATE_DIR="$ROOT/.build_source/archive-${ZIP_NAME//[^a-zA-Z0-9._-]/_}"
-              mkdir -p "$CANDIDATE_DIR"
-              if ! unzip -oq "$ROOT/$ZIP_NAME" -d "$CANDIDATE_DIR"; then
-                echo "تجاوزت أرشيفاً غير صالح: $ZIP_NAME"
-                continue
-              fi
-              CANDIDATE_PUBSPEC="$(find "$CANDIDATE_DIR" -type f -name pubspec.yaml -not -path '*/.git/*' -print -quit || true)"
-              if [ -n "$CANDIDATE_PUBSPEC" ] && [ -f "$(dirname "$CANDIDATE_PUBSPEC")/lib/main.dart" ] && [ -d "$(dirname "$CANDIDATE_PUBSPEC")/android" ]; then
-                PUBSPEC="$CANDIDATE_PUBSPEC"
-                echo "حزمة المشروع المختارة: $ZIP_NAME"
-                break
-              fi
-            done
+            mapfile -t ZIPS < <(find "$ROOT" -maxdepth 1 -type f -iname '*.zip' -printf '%f\n' | sort)
+            if [ "${#ZIPS[@]}" -eq 1 ]; then
+              mkdir -p "$ROOT/.build_source/single-archive"
+              unzip -oq "$ROOT/${ZIPS[0]}" -d "$ROOT/.build_source/single-archive"
+              PUBSPEC="$(find "$ROOT/.build_source/single-archive" -type f -name pubspec.yaml -not -path '*/.git/*' -print -quit || true)"
+            elif [ "${#ZIPS[@]}" -gt 1 ]; then
+              echo "عُثر على عدة ملفات ZIP ولا يوجد مشروع Flutter في المستودع. ارفع الحزمة النهائية باسم jadwali-school-audited.zip واحذف/انقل النسخ القديمة، لتجنب بناء نسخة خاطئة."
+              printf 'ملفات ZIP الموجودة: %s\n' "${ZIPS[*]}"
+              exit 1
+            fi
           fi
 
           if [ -z "$PUBSPEC" ] || [ ! -f "$PUBSPEC" ]; then
-            echo "لم أجد مشروع Flutter صالحاً. تأكد من رفع ملفات المشروع (pubspec.yaml وlib/main.dart ومجلد android/) إلى جذر المستودع أو مجلد فرعي، أو ارفع ملف jadwali-school-project-v*.zip إلى جذر المستودع. رفع ملف Workflow وحده لا يكفي لبناء التطبيق."
+            echo "لم أجد pubspec.yaml. يجب وضع ملفات المشروع كاملة في الجذر، أو رفع jadwali-school-audited.zip إلى جذر المستودع."
             find "$ROOT" -maxdepth 7 -type f \( -name pubspec.yaml -o -name '*.zip' \) -not -path '*/.git/*' -print || true
             exit 1
           fi
@@ -160,7 +152,8 @@ jobs:
       - name: رفع APK الناتج
         uses: actions/upload-artifact@v4
         with:
-          name: jadwali-school-latest-release-apk
+          name: jadwali-school-release-apk
           path: apk-artifact/app-release.apk
           if-no-files-found: error
           retention-days: 30
+
