@@ -26,17 +26,11 @@ jobs:
           ROOT="$GITHUB_WORKSPACE"
           PUBSPEC=""
 
-          # The explicitly named final audit package has priority even if an older
-          # source checkout also exists in the repository. This avoids building stale code.
-          # Prefer the explicitly named release archive; otherwise select the
-          # newest versioned Jadwali archive in the repository root.
-          PREFERRED="$ROOT/jadwali-school-project-v1.9.4.zip"
-          if [ ! -f "$PREFERRED" ]; then
-            PREFERRED="$(find "$ROOT" -maxdepth 1 -type f -regextype posix-extended \
-              -regex '.*/jadwali-school-project-v[0-9]+\.[0-9]+\.[0-9]+\.zip' \
-              -printf '%f\n' | sort -V | tail -n 1 || true)"
-            if [ -n "$PREFERRED" ]; then PREFERRED="$ROOT/$PREFERRED"; fi
-          fi
+          # Build the newest versioned package, including when older ZIPs coexist.
+          PREFERRED="$(find "$ROOT" -maxdepth 1 -type f -regextype posix-extended \
+            -regex '.*/jadwali-school-project-v[0-9]+\.[0-9]+\.[0-9]+\.zip' \
+            -printf '%f\n' | sort -V | tail -n 1 || true)"
+          if [ -n "$PREFERRED" ]; then PREFERRED="$ROOT/$PREFERRED"; fi
           if [ -n "$PREFERRED" ] && [ -f "$PREFERRED" ]; then
             mkdir -p "$ROOT/.build_source/final"
             unzip -oq "$PREFERRED" -d "$ROOT/.build_source/final"
@@ -170,4 +164,3 @@ jobs:
           path: apk-artifact/app-release.apk
           if-no-files-found: error
           retention-days: 30
-
