@@ -1,4 +1,4 @@
-name: جدولي 1.12.0 - بناء أندرويد
+name: جدولي 1.13.0 - بناء أندرويد
 
 on:
   push:
@@ -301,3 +301,4 @@ jobs:
           path: apk-artifact/app-release.apk
           if-no-files-found: error
           retention-days: 30
+
