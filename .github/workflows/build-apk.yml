@@ -1,4 +1,4 @@
-name: جدولي 1.13.4 - بناء أندرويد
+name: جدولي 1.13.5 - بناء أندرويد
 
 on:
   push:
@@ -264,6 +264,13 @@ jobs:
         shell: bash
         run: cd "$PROJECT_DIR" && flutter analyze --no-fatal-infos
 
+      - name: اختبار واجهة الهاتف أولاً (390 × 844)
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$PROJECT_DIR"
+          flutter test test/app_navigation_test.dart --reporter expanded 2>&1 | tee "$GITHUB_WORKSPACE/jadwali-navigation-tests.log"
+
       - name: تشغيل الاختبارات
         shell: bash
         run: |
@@ -276,7 +283,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: jadwali-tests-log
-          path: jadwali-tests.log
+          path: |
+            jadwali-tests.log
+            jadwali-navigation-tests.log
           if-no-files-found: ignore
 
       - name: بناء APK Release
@@ -301,4 +310,3 @@ jobs:
           path: apk-artifact/app-release.apk
           if-no-files-found: error
           retention-days: 30
-
