@@ -1,1 +1,303 @@
+name: جدولي 1.12.0 - بناء أندرويد
 
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: تدقيق واختبار وبناء APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: جلب المستودع
+        uses: actions/checkout@v4
+
+      - name: تحديد مشروع Flutter أو استخراج حزمة ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="$GITHUB_WORKSPACE"
+          PUBSPEC=""
+
+          # Build the newest versioned package, including when older ZIPs coexist.
+          PREFERRED="$(find "$ROOT" -maxdepth 1 -type f -regextype posix-extended \
+            -regex '.*/jadwali-school-project-v[0-9]+\.[0-9]+\.[0-9]+\.zip' \
+            -printf '%f\n' | sort -V | tail -n 1 || true)"
+          if [ -n "$PREFERRED" ]; then PREFERRED="$ROOT/$PREFERRED"; fi
+          if [ -n "$PREFERRED" ] && [ -f "$PREFERRED" ]; then
+            mkdir -p "$ROOT/.build_source/final"
+            unzip -oq "$PREFERRED" -d "$ROOT/.build_source/final"
+            PUBSPEC="$(find "$ROOT/.build_source/final" -type f -name pubspec.yaml -not -path '*/.git/*' -print -quit || true)"
+            echo "حزمة المشروع المختارة: $(basename "$PREFERRED")"
+          fi
+
+          # If no final package is uploaded, first accept the complete root project.
+          if [ -z "$PUBSPEC" ] && [ -f "$ROOT/pubspec.yaml" ]; then
+            PUBSPEC="$ROOT/pubspec.yaml"
+          fi
+
+          # A nested source checkout is supported too, but never search extracted build output.
+          if [ -z "$PUBSPEC" ]; then
+            PUBSPEC="$(find "$ROOT" -maxdepth 7 -type f -name pubspec.yaml \
+              -not -path '*/.git/*' -not -path '*/.build_source/*' \
+              -not -path '*/.dart_tool/*' -print -quit 2>/dev/null || true)"
+          fi
+
+          # Last fallback: if no versioned Jadwali archive was found, inspect
+          # all root ZIP files newest-first and use the first complete Flutter project.
+          if [ -z "$PUBSPEC" ]; then
+            mapfile -t ZIPS < <(find "$ROOT" -maxdepth 1 -type f -iname '*.zip' -printf '%f\n' | sort -Vr)
+            for ZIP_NAME in "${ZIPS[@]}"; do
+              CANDIDATE_DIR="$ROOT/.build_source/archive-${ZIP_NAME//[^a-zA-Z0-9._-]/_}"
+              mkdir -p "$CANDIDATE_DIR"
+              if ! unzip -oq "$ROOT/$ZIP_NAME" -d "$CANDIDATE_DIR"; then
+                echo "تجاوزت أرشيفاً غير صالح: $ZIP_NAME"
+                continue
+              fi
+              CANDIDATE_PUBSPEC="$(find "$CANDIDATE_DIR" -type f -name pubspec.yaml -not -path '*/.git/*' -print -quit || true)"
+              if [ -n "$CANDIDATE_PUBSPEC" ] && [ -f "$(dirname "$CANDIDATE_PUBSPEC")/lib/main.dart" ] && [ -d "$(dirname "$CANDIDATE_PUBSPEC")/android" ]; then
+                PUBSPEC="$CANDIDATE_PUBSPEC"
+                echo "حزمة المشروع المختارة: $ZIP_NAME"
+                break
+              fi
+            done
+          fi
+
+          if [ -z "$PUBSPEC" ] || [ ! -f "$PUBSPEC" ]; then
+            echo "لم أجد مشروع Flutter صالحاً. تأكد من رفع ملفات المشروع (pubspec.yaml وlib/main.dart ومجلد android/) إلى جذر المستودع أو مجلد فرعي، أو ارفع ملف jadwali-school-project-v*.zip إلى جذر المستودع. رفع ملف Workflow وحده لا يكفي لبناء التطبيق."
+            echo "الملفات الموجودة على الفرع الجاري بناؤه:"
+            ls -lah "$ROOT"
+            find "$ROOT" -maxdepth 7 -type f \( -name pubspec.yaml -o -name '*.zip' \) -not -path '*/.git/*' -print || true
+            exit 1
+          fi
+
+          PROJECT_PATH="$(dirname "$PUBSPEC")"
+          if [ ! -f "$PROJECT_PATH/lib/main.dart" ] || [ ! -d "$PROJECT_PATH/android" ]; then
+            echo "وُجد pubspec.yaml لكن المشروع غير مكتمل: يلزم lib/main.dart ومجلد android/ بجانبه."
+            echo "المجلد: $PROJECT_PATH"
+            ls -la "$PROJECT_PATH" || true
+            exit 1
+          fi
+          PROJECT_DIR="$(realpath --relative-to="$ROOT" "$PROJECT_PATH")"
+          [ -n "$PROJECT_DIR" ] || PROJECT_DIR="."
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+          echo "مجلد المشروع المعتمد: $PROJECT_DIR"
+          sed -n '1,6p' "$PROJECT_PATH/pubspec.yaml"
+          ls -la "$PROJECT_PATH" | head -40
+
+      - name: إعداد Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: توفير مساحة على مشغل GitHub لتنزيل وفك NDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          df -h "$GITHUB_WORKSPACE"
+          # This job builds Android only on a disposable hosted runner.
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost
+          df -h "$GITHUB_WORKSPACE"
+
+      - name: إعداد Flutter المستقر
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.7'
+          channel: stable
+
+      - name: فحص نسخة Flutter
+        run: flutter --version
+
+      - name: تثبيت NDK والتحقق من اكتماله قبل Gradle
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          if [ -z "$SDK_ROOT" ]; then
+            echo "::error::لم أجد Android SDK على مشغل GitHub."
+            exit 1
+          fi
+          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
+          python3 - --sdk "$SDK_ROOT" --version 28.2.13676358 --work "$RUNNER_TEMP/jadwali-ndk" <<'JADWALI_NDK'
+          #!/usr/bin/env python3
+          """Install and verify the requested NDK before Gradle starts (GitHub runner only)."""
+          import argparse
+          import os
+          from pathlib import Path
+          import re
+          import shutil
+          import subprocess
+          import sys
+
+
+          def ndk_problem(directory, version):
+              properties = directory / 'source.properties'
+              if not properties.is_file():
+                  return 'source.properties is missing'
+              match = re.search(r'^Pkg\.Revision\s*=\s*(\S+)\s*$', properties.read_text(), re.M)
+              if match is None or match.group(1) != version:
+                  return 'NDK revision does not match ' + version
+              clang = directory / 'toolchains/llvm/prebuilt/linux-x86_64/bin/clang'
+              if not clang.is_file() or not os.access(clang, os.X_OK):
+                  return 'the clang executable is missing or not executable'
+              toolchain = directory / 'build/cmake/android.toolchain.cmake'
+              if not toolchain.is_file() or toolchain.stat().st_size == 0:
+                  return 'the Android CMake toolchain is missing'
+              try:
+                  subprocess.run([str(clang), '--version'], check=True, timeout=30,
+                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+              except (OSError, subprocess.SubprocessError) as error:
+                  return 'clang cannot run: ' + str(error)
+              return None
+
+
+          def remove_incomplete(path):
+              if path.is_symlink():
+                  path.unlink()
+              elif path.exists():
+                  shutil.rmtree(path)
+
+
+          def prepare(sdk, version, work, attempts=3):
+              if not re.fullmatch(r'\d+\.\d+\.\d+', version):
+                  raise ValueError('Invalid NDK version')
+              sdk = Path(sdk).resolve(strict=True)
+              work = Path(work).resolve()
+              sdkmanager = sdk / 'cmdline-tools/latest/bin/sdkmanager'
+              if not sdkmanager.is_file():
+                  raise FileNotFoundError('SDK manager not found: ' + str(sdkmanager))
+              target = sdk / 'ndk' / version
+              problem = ndk_problem(target, version)
+              if problem is None:
+                  print('Verified existing NDK ' + version, flush=True)
+                  return
+              work.mkdir(parents=True, exist_ok=True)
+              for attempt in range(1, attempts + 1):
+                  print(f'NDK {version}: attempt {attempt}/{attempts}; {problem}', flush=True)
+                  print(f'Free SDK disk space: {shutil.disk_usage(sdk).free / (1024 ** 3):.1f} GiB', flush=True)
+                  # This runs before Gradle on an isolated GitHub runner. Remove only the
+                  # incomplete target and SDK manager's download staging, not other NDKs.
+                  remove_incomplete(target)
+                  remove_incomplete(sdk / '.temp')
+                  # Each retry gets a fresh SDK manager download cache; never change HOME.
+                  cache = work / f'android-user-{attempt}'
+                  remove_incomplete(cache)
+                  cache.mkdir(parents=True)
+                  environment = dict(os.environ)
+                  environment['ANDROID_USER_HOME'] = str(cache)
+                  # Older command-line tools use ANDROID_PREFS_ROOT instead.
+                  environment['ANDROID_PREFS_ROOT'] = str(cache)
+                  try:
+                      subprocess.run([str(sdkmanager), '--sdk_root=' + str(sdk),
+                                      '--install', 'ndk;' + version],
+                                     env=environment, check=True, timeout=900)
+                  except (OSError, subprocess.SubprocessError) as error:
+                      problem = 'sdkmanager failed: ' + str(error)
+                  else:
+                      problem = ndk_problem(target, version)
+                      if problem is None:
+                          print('NDK ' + version + ' installed and toolchain verified.', flush=True)
+                          return
+                  print('NDK verification failed: ' + str(problem), flush=True)
+              remove_incomplete(target)
+              raise RuntimeError(f'NDK {version} was not installed completely after {attempts} attempts: {problem}')
+
+
+          def main():
+              parser = argparse.ArgumentParser(description=__doc__)
+              parser.add_argument('--sdk', required=True)
+              parser.add_argument('--version', default='28.2.13676358')
+              parser.add_argument('--work', required=True)
+              args = parser.parse_args()
+              try:
+                  prepare(args.sdk, args.version, args.work)
+              except (OSError, ValueError, RuntimeError) as error:
+                  print('::error::' + str(error), file=sys.stderr)
+                  return 1
+              return 0
+
+
+          if __name__ == '__main__':
+              sys.exit(main())
+          JADWALI_NDK
+
+      - name: إعداد توقيع ثابت (اختياري)
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$PROJECT_DIR"
+          if [ -z "${ANDROID_KEYSTORE_BASE64:-}" ]; then
+            echo "لم تُحدد أسرار توقيع ثابت؛ سيُستخدم توقيع Debug للبناء التجريبي."
+            exit 0
+          fi
+          if [ -z "${ANDROID_KEY_ALIAS:-}" ] || [ -z "${ANDROID_KEY_PASSWORD:-}" ] || [ -z "${ANDROID_STORE_PASSWORD:-}" ]; then
+            echo "عند تقديم ANDROID_KEYSTORE_BASE64 يجب أيضًا ضبط ANDROID_KEY_ALIAS وANDROID_KEY_PASSWORD وANDROID_STORE_PASSWORD."
+            exit 1
+          fi
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/upload-keystore.jks
+          cat > android/key.properties <<EOF
+          storePassword=$ANDROID_STORE_PASSWORD
+          keyPassword=$ANDROID_KEY_PASSWORD
+          keyAlias=$ANDROID_KEY_ALIAS
+          storeFile=upload-keystore.jks
+          EOF
+
+      - name: تنزيل اعتماديات Flutter
+        shell: bash
+        run: cd "$PROJECT_DIR" && flutter pub get
+
+      - name: تحليل Dart
+        shell: bash
+        run: cd "$PROJECT_DIR" && flutter analyze --no-fatal-infos
+
+      - name: تشغيل الاختبارات
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$PROJECT_DIR"
+          flutter test --reporter expanded 2>&1 | tee "$GITHUB_WORKSPACE/jadwali-tests.log"
+
+      - name: حفظ سجل الاختبارات
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jadwali-tests-log
+          path: jadwali-tests.log
+          if-no-files-found: ignore
+
+      - name: بناء APK Release
+        shell: bash
+        run: cd "$PROJECT_DIR" && flutter build apk --release
+
+      - name: التحقق من ملف APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="$PROJECT_DIR/build/app/outputs/flutter-apk/app-release.apk"
+          test -s "$APK"
+          ls -lh "$APK"
+          sha256sum "$APK"
+          mkdir -p "$GITHUB_WORKSPACE/apk-artifact"
+          cp "$APK" "$GITHUB_WORKSPACE/apk-artifact/app-release.apk"
+
+      - name: رفع APK الناتج
+        uses: actions/upload-artifact@v4
+        with:
+          name: jadwali-school-latest-release-apk
+          path: apk-artifact/app-release.apk
+          if-no-files-found: error
+          retention-days: 30
