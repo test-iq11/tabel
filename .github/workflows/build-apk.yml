@@ -1,4 +1,4 @@
-name: جدولي 1.15.0 - بناء أندرويد
+name: جدولي 1.16.0 - بناء أندرويد
 
 on:
   push:
@@ -91,6 +91,21 @@ jobs:
           echo "مجلد المشروع المعتمد: $PROJECT_DIR"
           sed -n '1,6p' "$PROJECT_PATH/pubspec.yaml"
           ls -la "$PROJECT_PATH" | head -40
+
+      - name: اختبار القيود والإتاحة على نسخة المدرسة المجهولة الأسماء
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 "$PROJECT_DIR/ci/stress_constraints_availability.py" \
+            --output "$GITHUB_WORKSPACE/jadwali-stress-report.json"
+
+      - name: رفع تقرير اختبارات القيود والإتاحة
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jadwali-stress-report
+          path: jadwali-stress-report.json
+          if-no-files-found: ignore
 
       - name: إعداد Java 17
         uses: actions/setup-java@v4
