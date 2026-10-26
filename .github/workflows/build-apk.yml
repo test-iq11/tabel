@@ -1,4 +1,4 @@
-name: جدولي 1.16.0 - بناء أندرويد
+name: جدولي 1.18.0 - بناء أندرويد مع البحث العميق المحلي
 
 on:
   push:
@@ -11,6 +11,38 @@ permissions:
   contents: read
 
 jobs:
+  cp_sat_tests:
+    name: فحص المحرك الرياضي OR-Tools
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: استخراج أحدث مشروع ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+          ZIP="$(find . -maxdepth 1 -type f -name 'jadwali-school-project-v*.zip' | sort -V | tail -n 1)"
+          if [ -n "$ZIP" ]; then
+            mkdir -p .cp_sat_source
+            unzip -q "$ZIP" -d .cp_sat_source
+            PROJECT="$(find .cp_sat_source -type f -path '*/cp_sat_engine/solver.py' -print -quit)"
+            PROJECT="${PROJECT%/cp_sat_engine/solver.py}"
+          else
+            PROJECT="."
+          fi
+          test -f "$PROJECT/cp_sat_engine/solver.py"
+          echo "CP_SAT_PROJECT=$PROJECT" >> "$GITHUB_ENV"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: تثبيت OR-Tools الأصلي وتشغيل الاختبارات
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r "$CP_SAT_PROJECT/cp_sat_engine/requirements.txt"
+          cd "$CP_SAT_PROJECT"
+          python -m unittest cp_sat_engine.test_solver -v
+
   build:
     name: تدقيق واختبار وبناء APK
     runs-on: ubuntu-latest
