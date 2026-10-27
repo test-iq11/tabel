@@ -1,4 +1,4 @@
-name: جدولي 1.19.0 - بناء أندرويد مع البحث العميق المحلي
+name: جدولي 1.21.0 - استوديو المظهر ومحرك OR-Tools
 
 on:
   push:
@@ -41,9 +41,18 @@ jobs:
           set -euo pipefail
           python -m pip install -r "$CP_SAT_PROJECT/cp_sat_engine/requirements.txt"
           cd "$CP_SAT_PROJECT"
-          python -m unittest cp_sat_engine.test_solver -v
+          python -m unittest discover -s cp_sat_engine -t . -p "test_*.py" -v
+          python -m ci.cp_sat_regression
+
+      - name: رفع نتائج OR-Tools للفحص المستقل داخل Flutter
+        uses: actions/upload-artifact@v4
+        with:
+          name: cp-sat-regression
+          path: ${{ env.CP_SAT_PROJECT }}/test/fixtures/cp_sat_regression.json
+          if-no-files-found: error
 
   build:
+    needs: cp_sat_tests
     name: تدقيق واختبار وبناء APK
     runs-on: ubuntu-latest
     timeout-minutes: 90
@@ -310,6 +319,12 @@ jobs:
       - name: تحليل Dart
         shell: bash
         run: cd "$PROJECT_DIR" && flutter analyze --no-fatal-infos
+
+      - name: تنزيل نتائج المحرك الحقيقي للتحقق المستقل
+        uses: actions/download-artifact@v4
+        with:
+          name: cp-sat-regression
+          path: ${{ env.PROJECT_DIR }}/test/fixtures
 
       - name: تشغيل الاختبارات
         shell: bash
