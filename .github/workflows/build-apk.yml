@@ -32,8 +32,8 @@ jobs:
             -printf '%f\n' | sort -V | tail -n 1 || true)"
           if [ -n "$PREFERRED" ]; then PREFERRED="$ROOT/$PREFERRED"; fi
           # This workflow intentionally targets the requested 1.25.1 touch edition.
-          if [ -f "$ROOT/jadwali-school-project-v1.25.1-touch.zip" ]; then
-            PREFERRED="$ROOT/jadwali-school-project-v1.25.1-touch.zip"
+          if [ -f "$ROOT/jadwali-school-project-v1.25.1-touch2.zip" ]; then
+            PREFERRED="$ROOT/jadwali-school-project-v1.25.1-touch2.zip"
           fi
           if [ -n "$PREFERRED" ] && [ -f "$PREFERRED" ]; then
             mkdir -p "$ROOT/.build_source/final"
