@@ -1,4 +1,4 @@
-name: جدولي 1.25.1 - محرك التوزيع المحلي
+name: جدولي 1.25.1 - التبديل باللمس
 
 on:
   push:
@@ -31,6 +31,10 @@ jobs:
             -regex '.*/jadwali-school-project-v[0-9]+\.[0-9]+\.[0-9]+\.zip' \
             -printf '%f\n' | sort -V | tail -n 1 || true)"
           if [ -n "$PREFERRED" ]; then PREFERRED="$ROOT/$PREFERRED"; fi
+          # This workflow intentionally targets the requested 1.25.1 touch edition.
+          if [ -f "$ROOT/jadwali-school-project-v1.25.1-touch.zip" ]; then
+            PREFERRED="$ROOT/jadwali-school-project-v1.25.1-touch.zip"
+          fi
           if [ -n "$PREFERRED" ] && [ -f "$PREFERRED" ]; then
             mkdir -p "$ROOT/.build_source/final"
             unzip -oq "$PREFERRED" -d "$ROOT/.build_source/final"
