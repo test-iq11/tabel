@@ -1,4 +1,4 @@
-name: جدولي 1.23.0 - استوديو المظهر ومحرك OR-Tools
+name: جدولي 1.25.0 - محرك التوزيع المحلي
 
 on:
   push:
@@ -11,48 +11,7 @@ permissions:
   contents: read
 
 jobs:
-  cp_sat_tests:
-    name: فحص المحرك الرياضي OR-Tools
-    runs-on: ubuntu-latest
-    timeout-minutes: 12
-    steps:
-      - uses: actions/checkout@v4
-      - name: استخراج أحدث مشروع ZIP
-        shell: bash
-        run: |
-          set -euo pipefail
-          ZIP="$(find . -maxdepth 1 -type f -name 'jadwali-school-project-v*.zip' | sort -V | tail -n 1)"
-          if [ -n "$ZIP" ]; then
-            mkdir -p .cp_sat_source
-            unzip -q "$ZIP" -d .cp_sat_source
-            PROJECT="$(find .cp_sat_source -type f -path '*/cp_sat_engine/solver.py' -print -quit)"
-            PROJECT="${PROJECT%/cp_sat_engine/solver.py}"
-          else
-            PROJECT="."
-          fi
-          test -f "$PROJECT/cp_sat_engine/solver.py"
-          echo "CP_SAT_PROJECT=$PROJECT" >> "$GITHUB_ENV"
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - name: تثبيت OR-Tools الأصلي وتشغيل الاختبارات
-        shell: bash
-        run: |
-          set -euo pipefail
-          python -m pip install -r "$CP_SAT_PROJECT/cp_sat_engine/requirements.txt"
-          cd "$CP_SAT_PROJECT"
-          python -m unittest discover -s cp_sat_engine -t . -p "test_*.py" -v
-          python -m ci.cp_sat_regression
-
-      - name: رفع نتائج OR-Tools للفحص المستقل داخل Flutter
-        uses: actions/upload-artifact@v4
-        with:
-          name: cp-sat-regression
-          path: ${{ env.CP_SAT_PROJECT }}/test/fixtures/cp_sat_regression.json
-          if-no-files-found: error
-
   build:
-    needs: cp_sat_tests
     name: تدقيق واختبار وبناء APK
     runs-on: ubuntu-latest
     timeout-minutes: 90
@@ -319,12 +278,6 @@ jobs:
       - name: تحليل Dart
         shell: bash
         run: cd "$PROJECT_DIR" && flutter analyze --no-fatal-infos
-
-      - name: تنزيل نتائج المحرك الحقيقي للتحقق المستقل
-        uses: actions/download-artifact@v4
-        with:
-          name: cp-sat-regression
-          path: ${{ env.PROJECT_DIR }}/test/fixtures
 
       - name: تشغيل الاختبارات
         shell: bash
