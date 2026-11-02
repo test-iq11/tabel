@@ -1,4 +1,4 @@
-name: جدولي 1.25.1 - التبديل باللمس
+name: جدولي 1.26.0 - الإصلاح بأقل تغيير
 
 on:
   push:
@@ -27,14 +27,9 @@ jobs:
           PUBSPEC=""
 
           # Build the newest versioned package, including when older ZIPs coexist.
-          PREFERRED="$(find "$ROOT" -maxdepth 1 -type f -regextype posix-extended \
-            -regex '.*/jadwali-school-project-v[0-9]+\.[0-9]+\.[0-9]+\.zip' \
+          PREFERRED="$(find "$ROOT" -maxdepth 1 -type f -name 'jadwali-school-project-v*.zip' \
             -printf '%f\n' | sort -V | tail -n 1 || true)"
           if [ -n "$PREFERRED" ]; then PREFERRED="$ROOT/$PREFERRED"; fi
-          # This workflow intentionally targets the requested 1.25.1 touch edition.
-          if [ -f "$ROOT/jadwali-school-project-v1.25.1-touch2.zip" ]; then
-            PREFERRED="$ROOT/jadwali-school-project-v1.25.1-touch2.zip"
-          fi
           if [ -n "$PREFERRED" ] && [ -f "$PREFERRED" ]; then
             mkdir -p "$ROOT/.build_source/final"
             unzip -oq "$PREFERRED" -d "$ROOT/.build_source/final"
