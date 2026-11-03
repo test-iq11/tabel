@@ -1,4 +1,4 @@
-name: جدولي 1.29.0 - واجهة HTML الحديثة
+name: جدولي 1.29.1 - واجهة HTML الحديثة
 
 on:
   push:
@@ -91,12 +91,12 @@ jobs:
           sed -n '1,6p' "$PROJECT_PATH/pubspec.yaml"
           ls -la "$PROJECT_PATH" | head -40
 
-      - name: التحقق من اختيار إصدار الواجهة الحديثة 1.29.0
+      - name: التحقق من اختيار إصدار الواجهة الحديثة 1.29.1
         shell: bash
         run: |
           set -euo pipefail
-          grep -Eq '^version: 1[.]29[.]0[+]' "$PROJECT_DIR/pubspec.yaml" || {
-            echo '::error::تم اختيار مشروع قديم. ارفع jadwali-school-project-v1.29.0-html-match.zip إلى جذر المستودع.'
+          grep -Eq '^version: 1[.]29[.]1[+]' "$PROJECT_DIR/pubspec.yaml" || {
+            echo '::error::تم اختيار مشروع قديم. ارفع jadwali-school-project-v1.29.1-ui-navigation-fix.zip إلى جذر المستودع.'
             exit 1
           }
           test -f "$PROJECT_DIR/lib/features/timetable/repair_undo_dialog.dart"
@@ -107,7 +107,7 @@ jobs:
           test -f "$PROJECT_DIR/assets/design/approved-interactive-reference.html"
           grep -q 'html-right-sidebar' "$PROJECT_DIR/lib/app/app.dart"
           test -f "$PROJECT_DIR/test/modern_ui_128_test.dart"
-          echo 'تم اختيار مصدر جدولي 1.29.0 بواجهة Flutter الحديثة.'
+          echo 'تم اختيار مصدر جدولي 1.29.1 بواجهة Flutter الحديثة.'
 
       - name: اختبار القيود والإتاحة على نسخة المدرسة المجهولة الأسماء
         shell: bash
@@ -317,6 +317,17 @@ jobs:
       - name: تحليل Dart
         shell: bash
         run: cd "$PROJECT_DIR" && flutter analyze --no-fatal-infos
+
+      - name: اختبار التنقل والتقرير والبطاقة الجديدة أولاً
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$PROJECT_DIR"
+          flutter test --reporter expanded \
+            test/approved_html_look_test.dart \
+            test/app_navigation_test.dart \
+            test/report_and_weekly_swap_test.dart \
+            2>&1 | tee "$GITHUB_WORKSPACE/jadwali-tests.log"
 
       - name: تشغيل الاختبارات
         shell: bash
