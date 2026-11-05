@@ -351,9 +351,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [ ! -f /usr/share/fonts/truetype/noto/NotoSansArabic-Regular.ttf ]; then
+          if [ ! -f /usr/share/fonts/truetype/noto/NotoSansArabic-Regular.ttf ] || [ ! -f /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf ]; then
             sudo apt-get update -qq
-            sudo apt-get install -y -qq fonts-noto-core
+            sudo apt-get install -y -qq fonts-noto-core fonts-dejavu-core
           fi
           python3 "$PROJECT_DIR/ci/prepare_required_fonts.py"
           for file in UI-Regular.ttf UI-Bold.ttf UI-Latin.ttf Arabic-Regular.ttf Report-Regular.ttf; do
@@ -441,6 +441,14 @@ jobs:
             test/approved_html_look_test.dart \
             test/app_navigation_test.dart \
             test/report_and_weekly_swap_test.dart \
+            2>&1 | tee -a "$GITHUB_WORKSPACE/jadwali-tests.log"
+
+      - name: إعادة فحص أسباب الإخفاقات الثمانية
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$PROJECT_DIR"
+          flutter test --reporter expanded test/pdf_report_service_test.dart test/scoped_availability_page_test.dart test/scoped_availability_database_test.dart test/scoped_availability_services_test.dart test/mandatory_period_capacity_test.dart test/complete_schedule_solver_test.dart \
             2>&1 | tee -a "$GITHUB_WORKSPACE/jadwali-tests.log"
 
       - name: تشغيل الاختبارات
