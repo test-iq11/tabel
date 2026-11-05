@@ -1,4 +1,4 @@
-name: جدولي 1.29.4 - واجهة HTML الحديثة
+name: جدولي 1.30.0 - واجهة HTML الحديثة
 
 on:
   push:
@@ -19,84 +19,137 @@ jobs:
       - name: جلب المستودع
         uses: actions/checkout@v4
 
-      - name: تحديد مشروع Flutter أو استخراج حزمة ZIP
+      - name: تحديد مشروع Flutter والتحقق من أن المشروع مرفوع بالفعل
         shell: bash
         run: |
           set -euo pipefail
-          ROOT="$GITHUB_WORKSPACE"
-          PUBSPEC=""
+          python3 - <<'JADWALI_PROJECT_DETECTOR'
+          from __future__ import annotations
+          
+          import os
+          from pathlib import Path
+          import re
+          import sys
+          import zipfile
+          
+          ROOT = Path(os.environ['GITHUB_WORKSPACE']).resolve()
+          TARGET = '1.30.0'
+          STAGE = ROOT / '.build_source'
+          VERSION = re.compile(r'(?m)^version:\s*1\.30\.0(?:\+\d+)?\s*$')
+          
+          
+          def valid_project(where: Path) -> bool:
+              return ((where / 'pubspec.yaml').is_file()
+                      and (where / 'lib' / 'main.dart').is_file()
+                      and (where / 'android').is_dir())
+          
+          
+          def matches_version(where: Path) -> bool:
+              try:
+                  return bool(VERSION.search((where / 'pubspec.yaml').read_text(encoding='utf-8')))
+              except (OSError, UnicodeDecodeError):
+                  return False
+          
+          
+          def find_project(tree: Path) -> Path | None:
+              paths = [tree]
+              if tree.is_dir():
+                  paths += [p.parent for p in tree.rglob('pubspec.yaml')
+                            if '.git' not in p.parts and '.dart_tool' not in p.parts
+                            and (len(p.relative_to(tree).parts) <= 8)]
+              for folder in paths:
+                  if valid_project(folder) and matches_version(folder):
+                      return folder.resolve()
+              return None
+          
+          
+          def extract_zip(archive: Path, destination: Path) -> None:
+              with zipfile.ZipFile(archive) as z:
+                  contents = z.infolist()
+                  if len(contents) > 20000 or sum(i.file_size for i in contents) > 400_000_000:
+                      raise ValueError('أرشيف كبير جدًا أو غير متوقع')
+                  for entry in contents:
+                      entry_path = Path(entry.filename)
+                      if (entry_path.is_absolute() or '..' in entry_path.parts):
+                          raise ValueError('مسار غير آمن داخل ZIP')
+                  destination.mkdir(parents=True, exist_ok=True)
+                  z.extractall(destination)
+          
+          
+          def try_archive(archive: Path, index: int) -> Path | None:
+              destination = STAGE / f'archive_{index}'
+              try:
+                  print(f'فحص الأرشيف: {archive.name}', flush=True)
+                  extract_zip(archive, destination)
+                  direct = find_project(destination)
+                  if direct:
+                      return direct
+                  # Supports the combined "project-and-build" ZIP containing a project ZIP.
+                  inner_archives = sorted(destination.rglob('*.zip'))
+                  for subindex, inner in enumerate(inner_archives[:8]):
+                      if len(inner.relative_to(destination).parts) > 5:
+                          continue
+                      inner_dest = STAGE / f'archive_{index}_inner_{subindex}'
+                      extract_zip(inner, inner_dest)
+                      nested = find_project(inner_dest)
+                      if nested:
+                          print(f'استُخرج مشروع Flutter من ZIP داخلي: {inner.name}', flush=True)
+                          return nested
+              except (OSError, ValueError, zipfile.BadZipFile, zipfile.LargeZipFile) as exc:
+                  print(f'لم أتمكن من استخدام {archive.name}: {exc}', flush=True)
+              return None
+          
+          
+          # Prefer the approved source-version ZIP, then the combined package, then any other ZIP.
+          archives = [p for p in ROOT.glob('*.zip') if p.is_file()]
+          def priority(p: Path) -> tuple[int, str]:
+              n = p.name.lower()
+              if n.startswith('jadwali-school-project-v1.30.0'):
+                  return (0, n)
+              if n.startswith('jadwali-project-and-build-v1.30.0'):
+                  return (1, n)
+              return (2, n)
+          archives.sort(key=priority)
+          project = None
+          for index, archive in enumerate(archives):
+              project = try_archive(archive, index)
+              if project:
+                  break
+          
+          # Fallback to a fully extracted project checked in at root or within a subfolder.
+          if not project:
+              for candidate in [ROOT] + [p for p in ROOT.iterdir()
+                                          if p.is_dir() and p.name not in ('.git', '.github', '.build_source')]:
+                  project = find_project(candidate)
+                  if project:
+                      break
+          
+          if not project:
+              print('::error::ملفات المشروع غير مرفوعة أو الإصدار غير صحيح. ارفع ZIP مشروع جدولي 1.30.0 نفسه إلى جذر المستودع (Add file > Upload files > Commit changes) ثم أعد تشغيل Actions.')
+              print('الملفات الموجودة في جذر الفرع:', flush=True)
+              for item in sorted(ROOT.iterdir()):
+                  if item.name != '.git':
+                      print('  ' + item.name)
+              print('يجب أن يتضمن المشروع pubspec.yaml وlib/main.dart وandroid/ وأن يكون إصداره 1.30.0.')
+              sys.exit(1)
+          
+          relative = project.relative_to(ROOT).as_posix()
+          with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as env_file:
+              env_file.write('PROJECT_DIR=' + (relative if relative != '.' else '.') + '\n')
+          print('✅ مشروع Flutter الصحيح:', relative, flush=True)
+          for item in ('pubspec.yaml', 'lib/main.dart', 'android/app/build.gradle'):
+              if not (project / item).is_file():
+                  print('::error::ملف أساسي مفقود: ' + item)
+                  sys.exit(1)
+          print('✅ الإصدار مطابق:', TARGET, flush=True)
+          JADWALI_PROJECT_DETECTOR
 
-          # Build the newest versioned package, including when older ZIPs coexist.
-          PREFERRED="$(find "$ROOT" -maxdepth 1 -type f -name 'jadwali-school-project-v*.zip' \
-            -printf '%f\n' | sort -V | tail -n 1 || true)"
-          if [ -n "$PREFERRED" ]; then PREFERRED="$ROOT/$PREFERRED"; fi
-          if [ -n "$PREFERRED" ] && [ -f "$PREFERRED" ]; then
-            mkdir -p "$ROOT/.build_source/final"
-            unzip -oq "$PREFERRED" -d "$ROOT/.build_source/final"
-            PUBSPEC="$(find "$ROOT/.build_source/final" -type f -name pubspec.yaml -not -path '*/.git/*' -print -quit || true)"
-            echo "حزمة المشروع المختارة: $(basename "$PREFERRED")"
-          fi
-
-          # If no final package is uploaded, first accept the complete root project.
-          if [ -z "$PUBSPEC" ] && [ -f "$ROOT/pubspec.yaml" ]; then
-            PUBSPEC="$ROOT/pubspec.yaml"
-          fi
-
-          # A nested source checkout is supported too, but never search extracted build output.
-          if [ -z "$PUBSPEC" ]; then
-            PUBSPEC="$(find "$ROOT" -maxdepth 7 -type f -name pubspec.yaml \
-              -not -path '*/.git/*' -not -path '*/.build_source/*' \
-              -not -path '*/.dart_tool/*' -print -quit 2>/dev/null || true)"
-          fi
-
-          # Last fallback: if no versioned Jadwali archive was found, inspect
-          # all root ZIP files newest-first and use the first complete Flutter project.
-          if [ -z "$PUBSPEC" ]; then
-            mapfile -t ZIPS < <(find "$ROOT" -maxdepth 1 -type f -iname '*.zip' -printf '%f\n' | sort -Vr)
-            for ZIP_NAME in "${ZIPS[@]}"; do
-              CANDIDATE_DIR="$ROOT/.build_source/archive-${ZIP_NAME//[^a-zA-Z0-9._-]/_}"
-              mkdir -p "$CANDIDATE_DIR"
-              if ! unzip -oq "$ROOT/$ZIP_NAME" -d "$CANDIDATE_DIR"; then
-                echo "تجاوزت أرشيفاً غير صالح: $ZIP_NAME"
-                continue
-              fi
-              CANDIDATE_PUBSPEC="$(find "$CANDIDATE_DIR" -type f -name pubspec.yaml -not -path '*/.git/*' -print -quit || true)"
-              if [ -n "$CANDIDATE_PUBSPEC" ] && [ -f "$(dirname "$CANDIDATE_PUBSPEC")/lib/main.dart" ] && [ -d "$(dirname "$CANDIDATE_PUBSPEC")/android" ]; then
-                PUBSPEC="$CANDIDATE_PUBSPEC"
-                echo "حزمة المشروع المختارة: $ZIP_NAME"
-                break
-              fi
-            done
-          fi
-
-          if [ -z "$PUBSPEC" ] || [ ! -f "$PUBSPEC" ]; then
-            echo "لم أجد مشروع Flutter صالحاً. تأكد من رفع ملفات المشروع (pubspec.yaml وlib/main.dart ومجلد android/) إلى جذر المستودع أو مجلد فرعي، أو ارفع ملف jadwali-school-project-v*.zip إلى جذر المستودع. رفع ملف Workflow وحده لا يكفي لبناء التطبيق."
-            echo "الملفات الموجودة على الفرع الجاري بناؤه:"
-            ls -lah "$ROOT"
-            find "$ROOT" -maxdepth 7 -type f \( -name pubspec.yaml -o -name '*.zip' \) -not -path '*/.git/*' -print || true
-            exit 1
-          fi
-
-          PROJECT_PATH="$(dirname "$PUBSPEC")"
-          if [ ! -f "$PROJECT_PATH/lib/main.dart" ] || [ ! -d "$PROJECT_PATH/android" ]; then
-            echo "وُجد pubspec.yaml لكن المشروع غير مكتمل: يلزم lib/main.dart ومجلد android/ بجانبه."
-            echo "المجلد: $PROJECT_PATH"
-            ls -la "$PROJECT_PATH" || true
-            exit 1
-          fi
-          PROJECT_DIR="$(realpath --relative-to="$ROOT" "$PROJECT_PATH")"
-          [ -n "$PROJECT_DIR" ] || PROJECT_DIR="."
-          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-          echo "مجلد المشروع المعتمد: $PROJECT_DIR"
-          sed -n '1,6p' "$PROJECT_PATH/pubspec.yaml"
-          ls -la "$PROJECT_PATH" | head -40
-
-      - name: التحقق من اختيار إصدار الواجهة الحديثة 1.29.4
+      - name: التحقق من اختيار إصدار الواجهة الحديثة 1.30.0
         shell: bash
         run: |
           set -euo pipefail
-          grep -Eq '^version: 1[.]29[.]4[+]' "$PROJECT_DIR/pubspec.yaml" || {
-            echo '::error::تم اختيار مشروع قديم. ارفع jadwali-school-project-v1.29.4-schedule-settings.zip إلى جذر المستودع.'
+          grep -Eq '^version: 1[.]30[.]0[+]' "$PROJECT_DIR/pubspec.yaml" || {
+            echo '::error::تم اختيار مشروع قديم. ارفع jadwali-school-project-v1.30.0-ui-safe-scheduler.zip إلى جذر المستودع.'
             exit 1
           }
           test -f "$PROJECT_DIR/lib/features/timetable/repair_undo_dialog.dart"
@@ -109,7 +162,7 @@ jobs:
           test -f "$PROJECT_DIR/assets/design/approved-interactive-reference.html"
           grep -q 'html-right-sidebar' "$PROJECT_DIR/lib/app/app.dart"
           test -f "$PROJECT_DIR/test/modern_ui_128_test.dart"
-          echo 'تم اختيار مصدر جدولي 1.29.4 بواجهة Flutter الحديثة.'
+          echo 'تم اختيار مصدر جدولي 1.30.0 بواجهة Flutter الحديثة.'
 
       - name: اختبار القيود والإتاحة على نسخة المدرسة المجهولة الأسماء
         shell: bash
@@ -307,6 +360,11 @@ jobs:
             lib/app/app.dart \
             lib/core/html_dashboard_hero.dart \
             lib/core/jadwali_visuals.dart \
+            lib/services/schedule_integrity_audit.dart \
+            lib/services/schedule_improvement_service.dart \
+            lib/services/schedule_search_controller.dart \
+            lib/features/setup/grade_daily_lessons_page.dart \
+            lib/features/data_management/requirements_matrix.dart \
             lib/features/dashboard/dashboard_page.dart \
             lib/features/settings/app_settings_page.dart \
             lib/features/data_management/data_management_page.dart \
@@ -314,7 +372,10 @@ jobs:
             lib/features/reports/reports_page.dart \
             lib/features/timetable/timetable_page.dart \
             test/app_navigation_test.dart \
-            test/approved_html_look_test.dart
+            test/approved_html_look_test.dart \
+            test/grade_daily_interaction_130_test.dart \
+            test/dark_preview_130_test.dart \
+            test/schedule_integrity_audit_130_test.dart
 
       - name: تحليل Dart
         shell: bash
@@ -326,6 +387,9 @@ jobs:
           set -euo pipefail
           cd "$PROJECT_DIR"
           flutter test --reporter expanded \
+            test/schedule_integrity_audit_130_test.dart \
+            test/grade_daily_interaction_130_test.dart \
+            test/dark_preview_130_test.dart \
             test/approved_html_look_test.dart \
             test/app_navigation_test.dart \
             test/report_and_weekly_swap_test.dart \
