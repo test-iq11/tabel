@@ -1,4 +1,4 @@
-name: جدولي 1.30.5 - ألوان HTML والتنبيهات والوضع الليلي
+name: جدولي 1.30.6 - ألوان HTML والتنبيهات والوضع الليلي
 
 on:
   push:
@@ -33,9 +33,9 @@ jobs:
           import zipfile
           
           ROOT = Path(os.environ['GITHUB_WORKSPACE']).resolve()
-          TARGET = '1.30.5'
+          TARGET = '1.30.6'
           STAGE = ROOT / '.build_source'
-          VERSION = re.compile(r'(?m)^version:\s*1\.30\.5(?:\+\d+)?\s*$')
+          VERSION = re.compile(r'(?m)^version:\s*1\.30\.6(?:\+\d+)?\s*$')
           
           
           def valid_project(where: Path) -> bool:
@@ -104,9 +104,9 @@ jobs:
           archives = [p for p in ROOT.glob('*.zip') if p.is_file()]
           def priority(p: Path) -> tuple[int, str]:
               n = p.name.lower()
-              if n.startswith('jadwali-school-project-v1.30.5'):
+              if n.startswith('jadwali-school-project-v1.30.6'):
                   return (0, n)
-              if n.startswith('jadwali-project-and-build-v1.30.5'):
+              if n.startswith('jadwali-project-and-build-v1.30.6'):
                   return (1, n)
               return (2, n)
           archives.sort(key=priority)
@@ -125,12 +125,12 @@ jobs:
                       break
           
           if not project:
-              print('::error::ملفات المشروع غير مرفوعة أو الإصدار غير صحيح. ارفع ZIP مشروع جدولي 1.30.5 نفسه إلى جذر المستودع (Add file > Upload files > Commit changes) ثم أعد تشغيل Actions.')
+              print('::error::ملفات المشروع غير مرفوعة أو الإصدار غير صحيح. ارفع ZIP مشروع جدولي 1.30.6 نفسه إلى جذر المستودع (Add file > Upload files > Commit changes) ثم أعد تشغيل Actions.')
               print('الملفات الموجودة في جذر الفرع:', flush=True)
               for item in sorted(ROOT.iterdir()):
                   if item.name != '.git':
                       print('  ' + item.name)
-              print('يجب أن يتضمن المشروع pubspec.yaml وlib/main.dart وandroid/ وأن يكون إصداره 1.30.5.')
+              print('يجب أن يتضمن المشروع pubspec.yaml وlib/main.dart وandroid/ وأن يكون إصداره 1.30.6.')
               sys.exit(1)
           
           relative = project.relative_to(ROOT).as_posix()
@@ -144,12 +144,12 @@ jobs:
           print('✅ الإصدار مطابق:', TARGET, flush=True)
           JADWALI_PROJECT_DETECTOR
 
-      - name: التحقق من اختيار إصدار الواجهة الحديثة 1.30.5
+      - name: التحقق من اختيار إصدار الواجهة الحديثة 1.30.6
         shell: bash
         run: |
           set -euo pipefail
-          grep -Eq '^version: 1[.]30[.]5[+]' "$PROJECT_DIR/pubspec.yaml" || {
-            echo '::error::تم اختيار مشروع قديم. ارفع jadwali-school-project-v1.30.5-enhanced-ui-alerts.zip إلى جذر المستودع.'
+          grep -Eq '^version: 1[.]30[.]6[+]' "$PROJECT_DIR/pubspec.yaml" || {
+            echo '::error::تم اختيار مشروع قديم. ارفع jadwali-school-project-v1.30.6-analyze-fix.zip إلى جذر المستودع.'
             exit 1
           }
           test -f "$PROJECT_DIR/lib/features/timetable/repair_undo_dialog.dart"
@@ -166,7 +166,7 @@ jobs:
           test -f "$PROJECT_DIR/assets/design/approved-interactive-reference.html"
           grep -q 'html-right-sidebar' "$PROJECT_DIR/lib/app/app.dart"
           test -f "$PROJECT_DIR/test/modern_ui_128_test.dart"
-          echo 'تم اختيار مصدر جدولي 1.30.5 بواجهة Flutter الحديثة.'
+          echo 'تم اختيار مصدر جدولي 1.30.6 بواجهة Flutter الحديثة.'
 
       - name: اختبار القيود والإتاحة على نسخة المدرسة المجهولة الأسماء
         shell: bash
@@ -400,6 +400,13 @@ jobs:
             test/schedule_integrity_audit_130_test.dart \
             test/notification_center_1305_test.dart
 
+      - name: فحص تراجع أخطاء الواجهة والإصدار قبل تحليل Flutter
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$PROJECT_DIR"
+          python3 ci/test_enhanced_ui_source.py
+
       - name: تحليل Dart
         shell: bash
         run: cd "$PROJECT_DIR" && flutter analyze --no-fatal-infos
@@ -411,7 +418,7 @@ jobs:
           cd "$PROJECT_DIR"
           flutter test --reporter expanded test/notification_center_1305_test.dart \
             test/modern_ui_128_test.dart test/dark_preview_130_test.dart \
-            2>&1 | tee "$GITHUB_WORKSPACE/jadwali-tests.log"
+            2>&1 | tee -a "$GITHUB_WORKSPACE/jadwali-tests.log"
 
       - name: اختبار حفظ حصص الصف منفردًا قبل الاختبارات الأخرى
         shell: bash
@@ -419,7 +426,7 @@ jobs:
           set -euo pipefail
           cd "$PROJECT_DIR"
           flutter test --reporter expanded test/grade_daily_interaction_130_test.dart test/grade_day_policy_1304_test.dart \
-            2>&1 | tee "$GITHUB_WORKSPACE/jadwali-tests.log"
+            2>&1 | tee -a "$GITHUB_WORKSPACE/jadwali-tests.log"
 
       - name: اختبار التنقل والتقرير والبطاقة الجديدة أولاً
         shell: bash
@@ -434,14 +441,14 @@ jobs:
             test/approved_html_look_test.dart \
             test/app_navigation_test.dart \
             test/report_and_weekly_swap_test.dart \
-            2>&1 | tee "$GITHUB_WORKSPACE/jadwali-tests.log"
+            2>&1 | tee -a "$GITHUB_WORKSPACE/jadwali-tests.log"
 
       - name: تشغيل الاختبارات
         shell: bash
         run: |
           set -euo pipefail
           cd "$PROJECT_DIR"
-          flutter test --reporter expanded 2>&1 | tee "$GITHUB_WORKSPACE/jadwali-tests.log"
+          flutter test --reporter expanded 2>&1 | tee -a "$GITHUB_WORKSPACE/jadwali-tests.log"
 
       - name: حفظ سجل الاختبارات
         if: always()
