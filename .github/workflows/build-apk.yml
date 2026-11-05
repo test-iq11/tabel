@@ -1,4 +1,4 @@
-name: جدولي 1.30.3 - واجهة HTML الحديثة
+name: جدولي 1.30.5 - ألوان HTML والتنبيهات والوضع الليلي
 
 on:
   push:
@@ -33,9 +33,9 @@ jobs:
           import zipfile
           
           ROOT = Path(os.environ['GITHUB_WORKSPACE']).resolve()
-          TARGET = '1.30.3'
+          TARGET = '1.30.5'
           STAGE = ROOT / '.build_source'
-          VERSION = re.compile(r'(?m)^version:\s*1\.30\.3(?:\+\d+)?\s*$')
+          VERSION = re.compile(r'(?m)^version:\s*1\.30\.5(?:\+\d+)?\s*$')
           
           
           def valid_project(where: Path) -> bool:
@@ -104,9 +104,9 @@ jobs:
           archives = [p for p in ROOT.glob('*.zip') if p.is_file()]
           def priority(p: Path) -> tuple[int, str]:
               n = p.name.lower()
-              if n.startswith('jadwali-school-project-v1.30.3'):
+              if n.startswith('jadwali-school-project-v1.30.5'):
                   return (0, n)
-              if n.startswith('jadwali-project-and-build-v1.30.3'):
+              if n.startswith('jadwali-project-and-build-v1.30.5'):
                   return (1, n)
               return (2, n)
           archives.sort(key=priority)
@@ -125,12 +125,12 @@ jobs:
                       break
           
           if not project:
-              print('::error::ملفات المشروع غير مرفوعة أو الإصدار غير صحيح. ارفع ZIP مشروع جدولي 1.30.3 نفسه إلى جذر المستودع (Add file > Upload files > Commit changes) ثم أعد تشغيل Actions.')
+              print('::error::ملفات المشروع غير مرفوعة أو الإصدار غير صحيح. ارفع ZIP مشروع جدولي 1.30.5 نفسه إلى جذر المستودع (Add file > Upload files > Commit changes) ثم أعد تشغيل Actions.')
               print('الملفات الموجودة في جذر الفرع:', flush=True)
               for item in sorted(ROOT.iterdir()):
                   if item.name != '.git':
                       print('  ' + item.name)
-              print('يجب أن يتضمن المشروع pubspec.yaml وlib/main.dart وandroid/ وأن يكون إصداره 1.30.3.')
+              print('يجب أن يتضمن المشروع pubspec.yaml وlib/main.dart وandroid/ وأن يكون إصداره 1.30.5.')
               sys.exit(1)
           
           relative = project.relative_to(ROOT).as_posix()
@@ -144,25 +144,29 @@ jobs:
           print('✅ الإصدار مطابق:', TARGET, flush=True)
           JADWALI_PROJECT_DETECTOR
 
-      - name: التحقق من اختيار إصدار الواجهة الحديثة 1.30.3
+      - name: التحقق من اختيار إصدار الواجهة الحديثة 1.30.5
         shell: bash
         run: |
           set -euo pipefail
-          grep -Eq '^version: 1[.]30[.]3[+]' "$PROJECT_DIR/pubspec.yaml" || {
-            echo '::error::تم اختيار مشروع قديم. ارفع jadwali-school-project-v1.30.3-save-notification-fix.zip إلى جذر المستودع.'
+          grep -Eq '^version: 1[.]30[.]5[+]' "$PROJECT_DIR/pubspec.yaml" || {
+            echo '::error::تم اختيار مشروع قديم. ارفع jadwali-school-project-v1.30.5-enhanced-ui-alerts.zip إلى جذر المستودع.'
             exit 1
           }
           test -f "$PROJECT_DIR/lib/features/timetable/repair_undo_dialog.dart"
           test -f "$PROJECT_DIR/test/joint_minimal_repair_127_test.dart"
           test -f "$PROJECT_DIR/lib/core/jadwali_visuals.dart"
           test -f "$PROJECT_DIR/lib/core/jadwali_palettes.dart"
+          test -f "$PROJECT_DIR/lib/features/notifications/jadwali_notification_center.dart"
+          test -f "$PROJECT_DIR/ci/prepare_required_fonts.py"
+          test -f "$PROJECT_DIR/test/notification_center_1305_test.dart"
           test -f "$PROJECT_DIR/lib/features/setup/grade_daily_lessons_page.dart"
           test -f "$PROJECT_DIR/test/grade_daily_defaults_1294_test.dart"
+          test -f "$PROJECT_DIR/test/grade_day_policy_1304_test.dart"
           test -f "$PROJECT_DIR/lib/core/html_dashboard_hero.dart"
           test -f "$PROJECT_DIR/assets/design/approved-interactive-reference.html"
           grep -q 'html-right-sidebar' "$PROJECT_DIR/lib/app/app.dart"
           test -f "$PROJECT_DIR/test/modern_ui_128_test.dart"
-          echo 'تم اختيار مصدر جدولي 1.30.3 بواجهة Flutter الحديثة.'
+          echo 'تم اختيار مصدر جدولي 1.30.5 بواجهة Flutter الحديثة.'
 
       - name: اختبار القيود والإتاحة على نسخة المدرسة المجهولة الأسماء
         shell: bash
@@ -343,6 +347,19 @@ jobs:
           storeFile=upload-keystore.jks
           EOF
 
+      - name: تجهيز خطوط الواجهة والتقارير على مشغل البناء
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ ! -f /usr/share/fonts/truetype/noto/NotoSansArabic-Regular.ttf ]; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq fonts-noto-core
+          fi
+          python3 "$PROJECT_DIR/ci/prepare_required_fonts.py"
+          for file in UI-Regular.ttf UI-Bold.ttf UI-Latin.ttf Arabic-Regular.ttf Report-Regular.ttf; do
+            test -s "$PROJECT_DIR/assets/fonts/$file" || { echo "::error::Missing required font: $file"; exit 1; }
+          done
+
       - name: تنزيل اعتماديات Flutter
         shell: bash
         run: cd "$PROJECT_DIR" && flutter pub get
@@ -358,14 +375,18 @@ jobs:
           cd "$PROJECT_DIR"
           dart format --output=none \
             lib/app/app.dart \
+            lib/main.dart \
             lib/core/html_dashboard_hero.dart \
+            lib/features/dashboard/dashboard_page.dart \
             lib/core/jadwali_visuals.dart \
+            lib/core/jadwali_palettes.dart \
+            lib/core/theme.dart \
+            lib/features/notifications/jadwali_notification_center.dart \
             lib/services/schedule_integrity_audit.dart \
             lib/services/schedule_improvement_service.dart \
             lib/services/schedule_search_controller.dart \
             lib/features/setup/grade_daily_lessons_page.dart \
             lib/features/data_management/requirements_matrix.dart \
-            lib/features/dashboard/dashboard_page.dart \
             lib/features/settings/app_settings_page.dart \
             lib/features/data_management/data_management_page.dart \
             lib/features/conflicts/conflicts_page.dart \
@@ -374,19 +395,30 @@ jobs:
             test/app_navigation_test.dart \
             test/approved_html_look_test.dart \
             test/grade_daily_interaction_130_test.dart \
+            test/grade_day_policy_1304_test.dart \
             test/dark_preview_130_test.dart \
-            test/schedule_integrity_audit_130_test.dart
+            test/schedule_integrity_audit_130_test.dart \
+            test/notification_center_1305_test.dart
 
       - name: تحليل Dart
         shell: bash
         run: cd "$PROJECT_DIR" && flutter analyze --no-fatal-infos
+
+      - name: اختبار تنبيهات المدرسة ولوحات الألوان والوضع الليلي
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$PROJECT_DIR"
+          flutter test --reporter expanded test/notification_center_1305_test.dart \
+            test/modern_ui_128_test.dart test/dark_preview_130_test.dart \
+            2>&1 | tee "$GITHUB_WORKSPACE/jadwali-tests.log"
 
       - name: اختبار حفظ حصص الصف منفردًا قبل الاختبارات الأخرى
         shell: bash
         run: |
           set -euo pipefail
           cd "$PROJECT_DIR"
-          flutter test --reporter expanded test/grade_daily_interaction_130_test.dart \
+          flutter test --reporter expanded test/grade_daily_interaction_130_test.dart test/grade_day_policy_1304_test.dart \
             2>&1 | tee "$GITHUB_WORKSPACE/jadwali-tests.log"
 
       - name: اختبار التنقل والتقرير والبطاقة الجديدة أولاً
@@ -397,6 +429,7 @@ jobs:
           flutter test --reporter expanded \
             test/schedule_integrity_audit_130_test.dart \
             test/grade_daily_interaction_130_test.dart \
+            test/grade_day_policy_1304_test.dart \
             test/dark_preview_130_test.dart \
             test/approved_html_look_test.dart \
             test/app_navigation_test.dart \
