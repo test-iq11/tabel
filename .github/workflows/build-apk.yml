@@ -1,4 +1,4 @@
-name: جدولي 1.31.1 - إعدادات الهاتف وتقارير المعلمين
+name: جدولي 1.31.2 - إعدادات الهاتف وتقارير المعلمين
 
 on:
   push:
@@ -33,9 +33,9 @@ jobs:
           import zipfile
           
           ROOT = Path(os.environ['GITHUB_WORKSPACE']).resolve()
-          TARGET = '1.31.1'
+          TARGET = '1.31.2'
           STAGE = ROOT / '.build_source'
-          VERSION = re.compile(r'(?m)^version:\s*1\.31\.1(?:\+\d+)?\s*$')
+          VERSION = re.compile(r'(?m)^version:\s*1\.31\.2(?:\+\d+)?\s*$')
           
           
           def valid_project(where: Path) -> bool:
@@ -104,9 +104,9 @@ jobs:
           archives = [p for p in ROOT.glob('*.zip') if p.is_file()]
           def priority(p: Path) -> tuple[int, str]:
               n = p.name.lower()
-              if n.startswith('jadwali-school-project-v1.31.1'):
+              if n.startswith('jadwali-school-project-v1.31.2'):
                   return (0, n)
-              if n.startswith('jadwali-project-and-build-v1.31.1'):
+              if n.startswith('jadwali-project-and-build-v1.31.2'):
                   return (1, n)
               return (2, n)
           archives.sort(key=priority)
@@ -125,12 +125,12 @@ jobs:
                       break
           
           if not project:
-              print('::error::ملفات المشروع غير مرفوعة أو الإصدار غير صحيح. ارفع ZIP مشروع جدولي 1.31.1 نفسه إلى جذر المستودع (Add file > Upload files > Commit changes) ثم أعد تشغيل Actions.')
+              print('::error::ملفات المشروع غير مرفوعة أو الإصدار غير صحيح. ارفع ZIP مشروع جدولي 1.31.2 نفسه إلى جذر المستودع (Add file > Upload files > Commit changes) ثم أعد تشغيل Actions.')
               print('الملفات الموجودة في جذر الفرع:', flush=True)
               for item in sorted(ROOT.iterdir()):
                   if item.name != '.git':
                       print('  ' + item.name)
-              print('يجب أن يتضمن المشروع pubspec.yaml وlib/main.dart وandroid/ وأن يكون إصداره 1.31.1.')
+              print('يجب أن يتضمن المشروع pubspec.yaml وlib/main.dart وandroid/ وأن يكون إصداره 1.31.2.')
               sys.exit(1)
           
           relative = project.relative_to(ROOT).as_posix()
@@ -144,12 +144,12 @@ jobs:
           print('✅ الإصدار مطابق:', TARGET, flush=True)
           JADWALI_PROJECT_DETECTOR
 
-      - name: التحقق من اختيار إصدار الواجهة الحديثة 1.31.1
+      - name: التحقق من اختيار إصدار الواجهة الحديثة 1.31.2
         shell: bash
         run: |
           set -euo pipefail
-          grep -Eq '^version:[[:space:]]*1[.]31[.]1([+][0-9]+)?[[:space:]]*$' "$PROJECT_DIR/pubspec.yaml" || {
-            echo '::error::إصدار المشروع غير مطابق لـ 1.31.1. راجع pubspec.yaml داخل ZIP.'
+          grep -Eq '^version:[[:space:]]*1[.]31[.]2([+][0-9]+)?[[:space:]]*$' "$PROJECT_DIR/pubspec.yaml" || {
+            echo '::error::إصدار المشروع غير مطابق لـ 1.31.2. راجع pubspec.yaml داخل ZIP.'
             exit 1
           }
           test -f "$PROJECT_DIR/lib/features/timetable/repair_undo_dialog.dart"
@@ -169,7 +169,7 @@ jobs:
           test -f "$PROJECT_DIR/test/modern_ui_128_test.dart"
           test -f "$PROJECT_DIR/test/v1310_user_requirements_test.dart"
           test -f "$PROJECT_DIR/ci/test_v1310_source.py"
-          echo 'تم اختيار مصدر جدولي 1.31.1 بواجهة Flutter الحديثة.'
+          echo 'تم اختيار مصدر جدولي 1.31.2 بواجهة Flutter الحديثة.'
 
       - name: اختبار القيود والإتاحة على نسخة المدرسة المجهولة الأسماء
         shell: bash
@@ -407,7 +407,8 @@ jobs:
             test/dark_preview_130_test.dart \
             test/schedule_integrity_audit_130_test.dart \
             test/notification_center_1305_test.dart \
-            test/v1310_user_requirements_test.dart
+            test/v1310_user_requirements_test.dart \
+            test/unscheduled_reason_1312_test.dart
 
       - name: فحص تراجع أخطاء الواجهة والإصدار قبل تحليل Flutter
         shell: bash
@@ -422,6 +423,17 @@ jobs:
       - name: تحليل Dart
         shell: bash
         run: cd "$PROJECT_DIR" && flutter analyze --no-fatal-infos
+
+      # Focused regression: catch duplicate scheduler diagnostics quickly.
+      - name: اختبار محرك الجدولة وتفسير الحصص الناقصة
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$PROJECT_DIR"
+          flutter test --reporter expanded \
+            test/auto_scheduler_service_test.dart \
+            test/unscheduled_reason_1312_test.dart \
+            2>&1 | tee -a "$GITHUB_WORKSPACE/jadwali-tests.log"
 
       - name: اختبار تنبيهات المدرسة ولوحات الألوان والوضع الليلي
         shell: bash
